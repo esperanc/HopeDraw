@@ -149,10 +149,11 @@ export class SelectTool {
     } else if (this._state === 'handle') {
       const shapes = app.selection.selectedShapes();
       const after  = new Map(shapes.map(s => [s.id, s.snapshotState()]));
+      const before = this._snapshots.before;
       app.commands.execute({
         label: 'Transform',
         execute: () => { shapes.forEach(s => { s.applyState(after.get(s.id)); s.render(); }); app.selection.refresh(); },
-        undo:    () => { shapes.forEach(s => { s.applyState(this._snapshots.before.get(s.id)); s.render(); }); app.selection.refresh(); },
+        undo:    () => { shapes.forEach(s => { s.applyState(before.get(s.id)); s.render(); }); app.selection.refresh(); },
       });
     } else if (this._state === 'rubber') {
       this._finishRubber(wx, wy, e.shiftKey);
