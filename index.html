@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HopeDraw</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top menu bar -->
+    <header id="menu-bar">
+      <div id="logo"><span class="logo-hope">Hope</span><span class="logo-draw">Draw</span></div>
+      <nav id="main-menu">
+        <button class="menu-btn" data-menu="file">File</button>
+        <button class="menu-btn" data-menu="edit">Edit</button>
+        <button class="menu-btn" data-menu="view">View</button>
+        <button class="menu-btn" data-menu="arrange">Arrange</button>
+      </nav>
+      <div id="project-title-wrap">
+        <span id="project-title">Untitled</span>
+      </div>
+      <div id="header-actions">
+        <button id="btn-undo" class="icon-btn" title="Undo (Ctrl+Z)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>
+        </button>
+        <button id="btn-redo" class="icon-btn" title="Redo (Ctrl+Shift+Z)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg>
+        </button>
+        <div id="zoom-controls">
+          <button id="btn-zoom-out" class="icon-btn" title="Zoom Out">−</button>
+          <span id="zoom-display">100%</span>
+          <button id="btn-zoom-in" class="icon-btn" title="Zoom In">+</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="workspace">
+      <!-- Left toolbar -->
+      <aside id="toolbar">
+        <div class="tool-group">
+          <button class="tool-btn active" data-tool="select" title="Select (V)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2l16 10-7 1-4 7z"/></svg>
+          </button>
+        </div>
+        <div class="tool-separator"></div>
+        <div class="tool-group">
+          <button class="tool-btn" data-tool="rect" title="Rectangle (R)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="ellipse" title="Ellipse (E)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="arc" title="Arc (A)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M 12 3 A 9 9 0 0 1 21 12 M 12 12 L 12 3 M 12 12 L 21 12"></path></svg>
+          </button>
+          <button class="tool-btn" data-tool="parallelogram" title="Parallelogram (P)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6,18 9,6 18,6 15,18"/></svg>
+          </button>
+        </div>
+        <div class="tool-separator"></div>
+        <div class="tool-group">
+          <button class="tool-btn" data-tool="line" title="Line / Arrow (L)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="20" x2="20" y2="4"/><polyline points="14,4 20,4 20,10" fill="currentColor" stroke="currentColor"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="pen" title="Pen / Path (N)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+              <path d="M18 13L8 3l-5 5 10 10"/>
+              <circle cx="4.5" cy="18.5" r="2.5"/>
+            </svg>
+          </button>
+        </div>
+        <div class="tool-separator"></div>
+        <div class="tool-group">
+          <button class="tool-btn" data-tool="hand" title="Hand (H)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
+              <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
+              <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
+              <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+            </svg>
+          </button>
+        </div>
+        <div class="tool-separator"></div>
+        <div class="tool-group">
+          <button class="tool-btn" data-tool="text" title="Text (T)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H13v10h-2V8H4z"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="formula" title="LaTeX Formula (F)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="20" font-family="serif">∑</text></svg>
+          </button>
+        </div>
+        <div class="tool-separator"></div>
+        <div class="tool-group">
+          <button class="tool-btn" data-tool="group" id="btn-group" title="Group (Ctrl+G)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="ungroup" id="btn-ungroup" title="Ungroup (Ctrl+Shift+G)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="1" stroke-dasharray="3 2"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main canvas area -->
+      <main id="canvas-area">
+        <div id="canvas-container">
+          <svg id="main-canvas" xmlns="http://www.w3.org/2000/svg"
+               xmlns:xlink="http://www.w3.org/1999/xlink">
+            <defs id="svg-defs">
+              <!-- Background canvas grid (dim, for dark canvas area) -->
+              <pattern id="grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"/>
+              </pattern>
+              <pattern id="grid-pattern-major" width="100" height="100" patternUnits="userSpaceOnUse">
+                <rect width="100" height="100" fill="url(#grid-pattern)"/>
+                <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>
+              </pattern>
+              <!-- Page grid (dark lines on white page background) -->
+              <pattern id="page-grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(0,0,0,0.07)" stroke-width="0.5"/>
+              </pattern>
+              <pattern id="page-grid-pattern-major" width="100" height="100" patternUnits="userSpaceOnUse">
+                <rect width="100" height="100" fill="url(#page-grid-pattern)"/>
+                <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(0,0,0,0.13)" stroke-width="0.5"/>
+              </pattern>
+            </defs>
+            <g id="canvas-root">
+              <rect id="grid-bg" x="-5000" y="-5000" width="10000" height="10000"
+                    fill="url(#grid-pattern-major)" class="grid-visible"/>
+              <g id="page-layer">
+                <!-- Page container boundary -->
+                <rect id="page-bg" x="0" y="0" width="800" height="600" fill="#ffffff" stroke="rgba(100,100,120,0.4)" stroke-width="1"/>
+                <!-- Grid overlay on top of the page background (export-ignore) -->
+                <rect id="page-grid" x="0" y="0" width="800" height="600"
+                      fill="url(#page-grid-pattern-major)" class="export-ignore grid-visible"
+                      pointer-events="none"/>
+              </g>
+              <g id="shapes-layer"></g>
+              <g id="handles-layer"></g>
+            </g>
+          </svg>
+        </div>
+        <div id="canvas-status-bar">
+          <span id="cursor-pos">0, 0</span>
+          <span id="canvas-info-sep">·</span>
+          <span id="selection-info">No selection</span>
+          <span class="status-sep"></span>
+          <label id="snap-control" title="Snap shapes to grid">
+            <input type="checkbox" id="snap-toggle"> Snap
+          </label>
+          <label id="grid-size-control" title="Grid size in pixels">
+            <input type="number" id="grid-size-input" value="20" min="1" max="200" step="1" style="width:46px"> px
+          </label>
+        </div>
+      </main>
+
+      <!-- Right panel -->
+      <aside id="right-panel">
+        <div id="properties-panel">
+          <div class="panel-header">Properties</div>
+          <!-- Always-visible page setup section -->
+          <div id="page-props"></div>
+          <!-- Shape-specific properties (shown when a shape is selected) -->
+          <div id="shape-props">
+            <p class="no-selection-msg">Select a shape to edit its properties</p>
+          </div>
+        </div>
+        <div id="layers-panel">
+          <div class="panel-header">
+            <span>Layers</span>
+            <button id="btn-add-layer" class="panel-action-btn" title="Add Layer">+</button>
+          </div>
+          <div id="layers-list"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Drop-down menus -->
+  <div id="dropdown-menu" style="display:none"></div>
+
+  <!-- Modal overlay -->
+  <div id="modal-overlay" style="display:none">
+    <div id="modal-box">
+      <div id="modal-title"></div>
+      <div id="modal-body"></div>
+      <div id="modal-actions"></div>
+    </div>
+  </div>
+
+  <!-- Formula editor popup -->
+  <div id="formula-editor" style="display:none">
+    <div id="formula-editor-inner">
+      <div class="formula-editor-header">
+        <span>LaTeX Formula</span>
+        <button id="formula-close">✕</button>
+      </div>
+      <div id="formula-preview"></div>
+      <textarea id="formula-input" placeholder="e.g. \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}" spellcheck="false"></textarea>
+      <div class="formula-editor-hint">Use $..$ for inline, $$...$$ for display mode</div>
+      <div id="formula-actions">
+        <button id="formula-cancel" class="btn-secondary">Cancel</button>
+        <button id="formula-ok" class="btn-primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context menu -->
+  <div id="context-menu" style="display:none"></div>
+
+  <!-- CDN libs -->
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+    <!-- Global error catcher for debugging -->
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        document.body.innerHTML += `<div style="position:fixed;top:0;left:0;background:red;color:white;z-index:99999;padding:20px;font-size:24px;">ERROR: ${msg}<br>${url}:${line}:${col}<br>${error?.stack}</div>`;
+      };
+      window.addEventListener('unhandledrejection', function(event) {
+        document.body.innerHTML += `<div style="position:fixed;top:0;left:0;background:red;color:white;z-index:99999;padding:20px;font-size:24px;">PROMISE REJECTION: ${event.reason}</div>`;
+      });
+    </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
