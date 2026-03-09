@@ -15,7 +15,7 @@ HopeDraw is a lightweight, browser-based vector drawing application designed for
 ## User's Guide
 
 ### Getting Started
-1. Run a local web server in the project directory (e.g., `python3 -m http.server 9000`).
+1. The project is live at https://esperanc.github.io/HopeDraw, but you can run your own copy by setting up a local web server in the project directory (e.g., `python3 -m http.server 9000`).
 2. Open `http://localhost:9000` in your web browser.
 3. Use the left toolbar to select drawing tools. The properties of the currently selected tool or shape will appear in the right-hand Properties Panel.
 
