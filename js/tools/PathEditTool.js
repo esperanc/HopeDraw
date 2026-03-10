@@ -137,16 +137,45 @@ export class PathEditTool {
   onPointerDown(wx, wy, e) {
     if (e.button !== 0) return;
 
+    const now = Date.now();
+    const isDouble = (now - (this._lastClickTime || 0) < 300);
+    this._lastClickTime = now;
+
     const el  = e.target;
     const pht = el.dataset?.pht;
     const ni  = parseInt(el.dataset?.ni, 10);
 
+    // 1. Double click on an anchor -> Toggle smoothness
+    if (isDouble && pht === 'anchor' && !isNaN(ni)) {
+      this._toggleNodeSmoothness(ni);
+      e.stopPropagation();
+      return;
+    }
+
     if (!pht || isNaN(ni)) {
-      // Click outside all handles → exit edit mode
+      // 2. Double click on the stroke -> Insert node
+      if (isDouble && this._insertNodeAt(wx, wy)) {
+        e.stopPropagation();
+        return;
+      }
+
+      if (pht === 'tangent') return;
+
+      // 3. Single click on the stroke -> Do nothing, wait for potential double click or drag
+      if (this._getHitSegment(wx, wy)) return;
+
+      // 4. Click outside all handles and stroke → exit edit mode
       this.app.setActiveTool('select');
       return;
     }
     if (pht === 'tangent') return;
+
+    // Alt+Click on anchor -> delete node immediately
+    if (e.altKey && pht === 'anchor') {
+      this._deleteNode(ni);
+      e.stopPropagation();
+      return;
+    }
 
     wx = this.app.canvas.snap(wx);
     wy = this.app.canvas.snap(wy);
@@ -243,5 +272,153 @@ export class PathEditTool {
     });
     this._selectedIdx = null;
     this._rebuild();
+  }
+
+
+
+  _toggleNodeSmoothness(idx) {
+    const node = this._shape.nodes[idx];
+    if (!node) return;
+
+    const before = this._shape.nodes.map(n => ({ ...n }));
+    const after  = this._shape.nodes.map(n => ({ ...n }));
+    const target = after[idx];
+
+    if (target.smooth) {
+      // Smooth -> Sharp
+      target.smooth = false;
+      target.cInX = null; target.cInY = null;
+      target.cOutX = null; target.cOutY = null;
+    } else {
+      // Sharp -> Smooth (synthesize generic handles horizontally)
+      target.smooth = true;
+      const offset = 20; // 20px default bezier handle span
+      target.cInX = target.x - offset; target.cInY = target.y;
+      target.cOutX = target.x + offset; target.cOutY = target.y;
+    }
+
+    const shape = this._shape;
+    this.app.commands.execute({
+      label: 'Toggle node smoothness',
+      execute: () => { shape.nodes = after.map(n => ({ ...n })); shape.recomputeBBox(); shape.render(); },
+      undo:    () => { shape.nodes = before.map(n => ({ ...n })); shape.recomputeBBox(); shape.render(); },
+    });
+    this._rebuild();
+  }
+
+  _getHitSegment(wx, wy) {
+    if (this._shape.nodes.length < 2) return null;
+
+    // 1. Find the nearest segment boundary across all nodes
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    let bestT = 0; // The continuous t-value (0 to 1) along the curve where the hit happened
+
+    const nodes = this._shape.nodes;
+    const len = this._shape.closed ? nodes.length : nodes.length - 1;
+
+    for (let i = 0; i < len; i++) {
+      const n1 = nodes[i];
+      const n2 = nodes[(i + 1) % nodes.length];
+
+      // A quick generic lookup by taking 20 samples along the mathematical segment
+      for (let s = 0; s <= 20; s++) {
+        const t = s / 20;
+        const pt = this._evalSegment(n1, n2, t);
+        const dist = Math.hypot(pt.x - wx, pt.y - wy);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = i + 1; // Insert AT the next index
+          bestT = t;
+        }
+      }
+    }
+
+    // If the click was nowhere near the stroke (> 20 screen pixels), ignore it.
+    if (bestDist * this.app.canvas.zoom > 20) return null;
+    return { idx: bestIdx, t: bestT };
+  }
+
+  _insertNodeAt(wx, wy) {
+    const hit = this._getHitSegment(wx, wy);
+    if (!hit) return false;
+
+    const { idx: bestIdx, t: bestT } = hit;
+    const nodes = this._shape.nodes;
+    
+    // 2. Perform the insertion
+    const n1 = nodes[bestIdx - 1];
+    const n2 = nodes[bestIdx % nodes.length];
+    
+    // Evaluate the exact geometry at t to preserve curve position
+    const pt = this._evalSegment(n1, n2, bestT);
+    
+    const newNode = {
+      x: pt.x, y: pt.y,
+      cInX: null, cInY: null,
+      cOutX: null, cOutY: null,
+      smooth: false
+    };
+
+    // If it was a curve, we do De Casteljau's algorithm to split the bezier
+    if (n1.cOutX != null || n2.cInX != null) {
+      const p0x = n1.x, p0y = n1.y;
+      const p1x = n1.cOutX ?? n1.x, p1y = n1.cOutY ?? n1.y;
+      const p2x = n2.cInX ?? n2.x, p2y = n2.cInY ?? n2.y;
+      const p3x = n2.x, p3y = n2.y;
+
+      // De Casteljau subdivision at t
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const q0x = lerp(p0x, p1x, bestT), q0y = lerp(p0y, p1y, bestT);
+      const q1x = lerp(p1x, p2x, bestT), q1y = lerp(p1y, p2y, bestT);
+      const q2x = lerp(p2x, p3x, bestT), q2y = lerp(p2y, p3y, bestT);
+      const r0x = lerp(q0x, q1x, bestT), r0y = lerp(q0y, q1y, bestT);
+      const r1x = lerp(q1x, q2x, bestT), r1y = lerp(q1y, q2y, bestT);
+      // The point pt is lerp(r0, r1, t)
+
+      n1.cOutX = q0x; n1.cOutY = q0y;
+      newNode.cInX = r0x; newNode.cInY = r0y;
+      newNode.cOutX = r1x; newNode.cOutY = r1y;
+      n2.cInX = q2x; n2.cInY = q2y;
+      newNode.smooth = true;
+    }
+
+    const before = this._shape.nodes.map(n => ({ ...n }));
+    const after  = this._shape.nodes.map(n => ({ ...n }));
+    after.splice(bestIdx, 0, newNode);
+
+    const shape = this._shape;
+    this.app.commands.execute({
+      label: 'Insert path node',
+      execute: () => { shape.nodes = after.map(n => ({ ...n })); shape.recomputeBBox(); shape.render(); },
+      undo:    () => { shape.nodes = before.map(n => ({ ...n })); shape.recomputeBBox(); shape.render(); },
+    });
+    
+    this._selectedIdx = bestIdx;
+    this._rebuild();
+    return true;
+  }
+
+  // Evaluates a cubic bezier (or line) at parameter t [0,1]
+  _evalSegment(n1, n2, t) {
+    if (n1.cOutX == null && n2.cInX == null) {
+      return {
+        x: n1.x + (n2.x - n1.x) * t,
+        y: n1.y + (n2.y - n1.y) * t
+      };
+    }
+    const p0x = n1.x, p0y = n1.y;
+    const p1x = n1.cOutX ?? n1.x, p1y = n1.cOutY ?? n1.y;
+    const p2x = n2.cInX ?? n2.x, p2y = n2.cInY ?? n2.y;
+    const p3x = n2.x, p3y = n2.y;
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const mt3 = mt2 * mt;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return {
+      x: mt3 * p0x + 3 * mt2 * t * p1x + 3 * mt * t2 * p2x + t3 * p3x,
+      y: mt3 * p0y + 3 * mt2 * t * p1y + 3 * mt * t2 * p2y + t3 * p3y
+    };
   }
 }
