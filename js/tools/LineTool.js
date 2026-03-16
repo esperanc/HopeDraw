@@ -17,6 +17,8 @@ export class LineTool {
 
   onPointerDown(wx, wy, e) {
     if (e.button !== 0) return;
+    wx = this.app.canvas.snap(wx);
+    wy = this.app.canvas.snap(wy);
     this._down = true;
     const d = this.app.getDefaultProps('line');
     this._preview = new LineShape({
@@ -31,6 +33,8 @@ export class LineTool {
 
   onPointerMove(wx, wy, e) {
     if (!this._down || !this._preview) return;
+    wx = this.app.canvas.snap(wx);
+    wy = this.app.canvas.snap(wy);
     this._preview.x2 = wx;
     this._preview.y2 = wy;
     this._preview.render();
@@ -38,6 +42,8 @@ export class LineTool {
 
   onPointerUp(wx, wy, e) {
     if (!this._down || !this._preview) return;
+    wx = this.app.canvas.snap(wx);
+    wy = this.app.canvas.snap(wy);
     this._down = false;
     const shape = this._preview;
     shape.unmount();

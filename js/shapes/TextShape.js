@@ -108,5 +108,45 @@ export class TextShape extends Shape {
     };
   }
 
+  /** Rasterize text DOM node to high-resolution base64 PNG for SVG export */
+  async rasterise() {
+    if (!this._div || typeof window.html2canvas === 'undefined') return null;
+    try {
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+
+      // Clone to a temporary div on the body
+      const tmp = document.createElement('div');
+      Object.assign(tmp.style, {
+        position: 'absolute', top: '-9999px', left: '-9999px',
+        width:  this._fo.getAttribute('width') + 'px',
+        height: this._fo.getAttribute('height') + 'px',
+        padding: '0', margin: '0', overflow: 'hidden'
+      });
+      
+      const clone = this._div.cloneNode(true);
+      clone.style.cssText = this._div.style.cssText;
+      clone.style.width = '100%';
+      clone.style.height = '100%';
+      clone.style.overflow = 'hidden'; // Hide scrollbars during capture
+      
+      tmp.appendChild(clone);
+      document.body.appendChild(tmp);
+
+      const scale = 4; 
+      const canvas = await window.html2canvas(clone, {
+        backgroundColor: (this.bgFill === 'transparent' || this.bgFill === 'none') ? null : this.bgFill,
+        scale: scale,
+        useCORS: true,
+        logging: false,
+      });
+
+      document.body.removeChild(tmp);
+      return canvas.toDataURL('image/png');
+    } catch(e) {
+      console.error('Text rasterise failed:', e);
+      return null;
+    }
+  }
+
   static deserialize(data) { return new TextShape(data); }
 }

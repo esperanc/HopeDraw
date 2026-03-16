@@ -136,38 +136,30 @@ export class ProjectManager {
     try {
       const shapesLayer = this.app.canvas.shapesLayer;
 
-      // ── Rasterize formula (KaTeX) shapes ──────────────────────────────────
-      // KaTeX renders HTML that depends on its external CSS. To make formulas
-      // self-contained in the exported SVG, we rasterize each formula's DOM
-      // node to a PNG using html2canvas and embed it as a base64 <image>.
-      // We temporarily swap the live DOM (foreignObject → image), serialize,
-      // then restore — so the canvas itself is never disrupted.
+      // ── Rasterize formula and multi-line text shapes ──────────────────────
+      // To ensure formulas and HTML-based text are portable in the exported SVG, 
+      // we convert them to high-resolution PNG images. This avoids issues with 
+      // missing fonts, scrollbars, or unsupported <foreignObject>.
       const swaps = [];
-      if (typeof window.html2canvas === 'function') {
-        for (const [, shape] of this.app.shapes) {
-          if (shape.type !== 'formula' || !shape.el) continue;
-          const fo = shape.el.querySelector('foreignObject');
-          if (!fo) continue;
-          try {
-            const canvas = await window.html2canvas(shape._wrap, {
-              backgroundColor: shape.bgFill === 'transparent' ? null : shape.bgFill,
-              scale: 2,
-              useCORS: true,
-              logging: false,
-            });
-            const dataUrl = canvas.toDataURL('image/png');
-            const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-            img.setAttribute('x',      fo.getAttribute('x'));
-            img.setAttribute('y',      fo.getAttribute('y'));
-            img.setAttribute('width',  fo.getAttribute('width'));
-            img.setAttribute('height', fo.getAttribute('height'));
-            img.setAttribute('href', dataUrl);
-            img.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-            fo.replaceWith(img);
-            swaps.push({ img, fo });
-          } catch (e) {
-            console.warn('Formula rasterize failed, will export as foreignObject:', e);
-          }
+      for (const [, shape] of this.app.shapes) {
+        if ((shape.type !== 'formula' && shape.type !== 'text') || !shape.el) continue;
+        const fo = shape.el.querySelector('foreignObject');
+        if (!fo) continue;
+
+        const dataUrl = await shape.rasterise();
+        if (dataUrl) {
+          const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+          img.setAttribute('x',      fo.getAttribute('x'));
+          img.setAttribute('y',      fo.getAttribute('y'));
+          img.setAttribute('width',  fo.getAttribute('width'));
+          img.setAttribute('height', fo.getAttribute('height'));
+          // Set both href and xlink:href for maximum compatibility
+          img.setAttribute('href',   dataUrl);
+          img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', dataUrl);
+          img.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          
+          fo.replaceWith(img);
+          swaps.push({ img, fo });
         }
       }
 
@@ -178,26 +170,41 @@ export class ProjectManager {
       // Restore swapped formula elements before any early-exit
       for (const { img, fo } of swaps) img.replaceWith(fo);
 
-      // Sanitize NaN values that can appear from partially-initialized shapes
+      // Sanitize NaN values
       shapesStr = shapesStr.replace(/\bNaN\b/g, '0');
 
-      // Strip KaTeX accessibility MathML nodes — they render as raw LaTeX text
-      // in SVG viewers that don't understand MathML
+      // Strip elements marked as export-ignore (like GroupShape blue dashed boxes)
+      // This matches both self-closing and paired tags with the export-ignore class
+      shapesStr = shapesStr.replace(/<[A-Za-z0-9]+[^>]*class="[^"]*export-ignore[^"]*"[^>]*>[\s\S]*?<\/[A-Za-z0-9]+>/g, '');
+      shapesStr = shapesStr.replace(/<[A-Za-z0-9]+[^>]*class="[^"]*export-ignore[^"]*"[^>]*\/>/g, '');
+
+      // Strip KaTeX mathml for browsers that don't need it
       shapesStr = shapesStr.replace(/<span[^>]*class="[^"]*katex-mathml[^"]*"[\s\S]*?<\/span>/g, '');
 
-      const w = this.pageWidth;
-      const h = this.pageHeight;
+      // ── Determine ViewBox ────────────────────────────────────────────────
+      // We want to export the entire page area (0,0,W,H) PLUS any shapes 
+      // that might be outside this boundary.
+      const sceneBB = this._getSceneBBox();
+      const minX = Math.min(0, sceneBB.x);
+      const minY = Math.min(0, sceneBB.y);
+      const maxX = Math.max(this.pageWidth,  sceneBB.x + sceneBB.w);
+      const maxY = Math.max(this.pageHeight, sceneBB.y + sceneBB.h);
+      
+      const vbW = maxX - minX;
+      const vbH = maxY - minY;
+      const vbX = minX;
+      const vbY = minY;
 
       const svgStr = `<?xml version="1.0" encoding="utf-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:xlink="http://www.w3.org/1999/xlink"
-     viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+     viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${vbW}" height="${vbH}">
   <metadata>
     <hopedraw:project xmlns:hopedraw="https://hopedraw.app/ns">
       ${JSON.stringify(this._serialize(this._currentName)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
     </hopedraw:project>
   </metadata>
-  ${this.pageBgColor !== 'transparent' ? `<rect width="100%" height="100%" fill="${this.pageBgColor}"/>` : ''}
+  ${this.pageBgColor !== 'transparent' ? `<rect x="0" y="0" width="${this.pageWidth}" height="${this.pageHeight}" fill="${this.pageBgColor}"/>` : ''}
   ${shapesStr}
 </svg>`;
 

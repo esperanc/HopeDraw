@@ -59,16 +59,43 @@ export class FormulaShape extends Shape {
     }
   }
 
-  /** Rasterize formula DOM node to base64 PNG for SVG export */
+  /** Rasterize formula DOM node to high-resolution base64 PNG for SVG export */
   async rasterise() {
     if (!this._wrap || typeof window.html2canvas === 'undefined') return null;
     try {
-      const canvas = await window.html2canvas(this._wrap, {
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+
+      // Clone to a temporary div on the body to avoid SVG/foreignObject nesting issues during capture
+      const tmp = document.createElement('div');
+      Object.assign(tmp.style, {
+        position: 'absolute', top: '-9999px', left: '-9999px',
+        width:  this._fo.getAttribute('width') + 'px',
+        height: this._fo.getAttribute('height') + 'px',
+        padding: '0', margin: '0', overflow: 'visible'
+      });
+      
+      const clone = this._wrap.cloneNode(true);
+      // Ensure clone has the same inline styles
+      clone.style.cssText = this._wrap.style.cssText;
+      
+      // Force dimensions and layout for capture
+      clone.style.width = this._fo.getAttribute('width') + 'px';
+      clone.style.height = this._fo.getAttribute('height') + 'px';
+      clone.style.display = 'flex';
+      clone.style.position = 'relative';
+      
+      tmp.appendChild(clone);
+      document.body.appendChild(tmp);
+
+      const scale = 4; 
+      const canvas = await window.html2canvas(clone, {
         backgroundColor: this.bgFill === 'transparent' ? null : this.bgFill,
-        scale: 2,
+        scale: scale,
         useCORS: true,
         logging: false,
       });
+
+      document.body.removeChild(tmp);
       return canvas.toDataURL('image/png');
     } catch(e) {
       console.error('Formula rasterise failed:', e);

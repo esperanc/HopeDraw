@@ -39,6 +39,14 @@ export class ProjectMenu {
     document.getElementById('btn-zoom-in')?.addEventListener('click',  () => this.app.canvas.zoomBy(1.2));
     document.getElementById('btn-zoom-out')?.addEventListener('click', () => this.app.canvas.zoomBy(1/1.2));
 
+    // Support cross-instance paste button enabling
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'hopedraw_clipboard') {
+        // Redraw open edit menu if visible to update Paste's disabled state
+        if (this._open === 'edit') this._openDropdown('edit', document.querySelector('[data-menu="edit"]'));
+      }
+    });
+
     // Click outside to close dropdown
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.menu-btn') && !e.target.closest('#dropdown-menu')) {
@@ -121,7 +129,7 @@ export class ProjectMenu {
         '---',
         { label: 'Cut',           action: 'edit-cut',    shortcut: 'Ctrl+X', disabled: !hasSel },
         { label: 'Copy',          action: 'edit-copy',   shortcut: 'Ctrl+C', disabled: !hasSel },
-        { label: 'Paste',         action: 'edit-paste',  shortcut: 'Ctrl+V', disabled: !app._clipboard?.length },
+        { label: 'Paste',         action: 'edit-paste',  shortcut: 'Ctrl+V', disabled: !this._hasClipboard() },
         '---',
         { label: 'Select All',    action: 'edit-select-all', shortcut: 'Ctrl+A' },
         { label: 'Delete',        action: 'edit-delete', shortcut: 'Del',    disabled: !hasSel },
@@ -146,6 +154,12 @@ export class ProjectMenu {
       ];
       default: return [];
     }
+  }
+
+  _hasClipboard() {
+    try {
+      return !!this.app._clipboard?.length || !!localStorage.getItem('hopedraw_clipboard');
+    } catch { return !!this.app._clipboard?.length; }
   }
 
   _runAction(action) {

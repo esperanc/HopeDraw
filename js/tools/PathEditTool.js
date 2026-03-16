@@ -177,9 +177,8 @@ export class PathEditTool {
       return;
     }
 
-    wx = this.app.canvas.snap(wx);
-    wy = this.app.canvas.snap(wy);
-
+    // We do NOT snap wx/wy here so that we have high-precision starting points 
+    // for calculating the drag delta in onPointerMove.
     this._selectedIdx = ni;
     this._snapshot    = this._shape.nodes.map(n => ({ ...n }));
     this._dragging    = {
@@ -195,25 +194,30 @@ export class PathEditTool {
 
   onPointerMove(wx, wy, e) {
     if (!this._dragging) return;
-    wx = this.app.canvas.snap(wx);
-    wy = this.app.canvas.snap(wy);
-
     const { nodeIdx, type, startWx, startWy, origNode } = this._dragging;
+    const canvas = this.app.canvas;
+
     const dx   = wx - startWx;
     const dy   = wy - startWy;
     const node = this._shape.nodes[nodeIdx];
 
     if (type === 'anchor') {
-      // Move anchor + all attached control points by the same delta
-      node.x = origNode.x + dx;
-      node.y = origNode.y + dy;
-      if (origNode.cInX  != null) { node.cInX  = origNode.cInX  + dx; node.cInY  = origNode.cInY  + dy; }
-      if (origNode.cOutX != null) { node.cOutX = origNode.cOutX + dx; node.cOutY = origNode.cOutY + dy; }
+      // Snap the anchor to the grid
+      const snapX = canvas.snap(origNode.x + dx);
+      const snapY = canvas.snap(origNode.y + dy);
+      const adx = snapX - origNode.x;
+      const ady = snapY - origNode.y;
+
+      node.x = snapX;
+      node.y = snapY;
+      // Move attached control points by the same delta to preserve relative geometry
+      if (origNode.cInX  != null) { node.cInX  = origNode.cInX  + adx; node.cInY  = origNode.cInY  + ady; }
+      if (origNode.cOutX != null) { node.cOutX = origNode.cOutX + adx; node.cOutY = origNode.cOutY + ady; }
 
     } else if (type === 'cpOut') {
-      node.cOutX = origNode.cOutX + dx;
-      node.cOutY = origNode.cOutY + dy;
-      // Mirror cIn to keep smooth
+      node.cOutX = canvas.snap(origNode.cOutX + dx);
+      node.cOutY = canvas.snap(origNode.cOutY + dy);
+      // Mirror cIn to keep smooth (distance is preserved, but angle might change slightly due to snapping)
       if (node.smooth && origNode.cInX != null) {
         const lenIn  = Math.hypot(origNode.cInX - origNode.x, origNode.cInY - origNode.y);
         const ddx = node.cOutX - node.x, ddy = node.cOutY - node.y;
@@ -223,8 +227,8 @@ export class PathEditTool {
       }
 
     } else if (type === 'cpIn') {
-      node.cInX = origNode.cInX + dx;
-      node.cInY = origNode.cInY + dy;
+      node.cInX = canvas.snap(origNode.cInX + dx);
+      node.cInY = canvas.snap(origNode.cInY + dy);
       // Mirror cOut to keep smooth
       if (node.smooth && origNode.cOutX != null) {
         const lenOut = Math.hypot(origNode.cOutX - origNode.x, origNode.cOutY - origNode.y);

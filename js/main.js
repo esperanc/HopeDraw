@@ -88,11 +88,13 @@ const app = {
     this.defaultProps[type][prop] = value;
   },
 
-  setActiveTool(name) {
+  setActiveTool(name, clearSelection = false) {
     // Group/ungroup are one-shot actions, not persistent tool modes.
     // Handle them BEFORE the tool-lookup guard so they always fire.
     if (name === 'group')   { this._doGroup();   return; }
     if (name === 'ungroup') { this._doUngroup(); return; }
+
+    if (clearSelection) this.selection.clear();
 
     if (this._activeTool?.deactivate) this._activeTool.deactivate();
     const tool = this.tools[name];
@@ -205,7 +207,12 @@ const app = {
     const shapes = this.selection.selectedShapes();
     if (!shapes.length) return;
     // Deep clone the serialized selected shapes into clipboard
-    this._clipboard = JSON.parse(JSON.stringify(shapes.map(s => s.serialize())));
+    const data = JSON.parse(JSON.stringify(shapes.map(s => s.serialize())));
+    this._clipboard = data;
+    // Persist to localStorage for cross-instance copy/paste
+    try {
+      localStorage.setItem('hopedraw_clipboard', JSON.stringify(this._clipboard));
+    } catch (e) { console.error('Clipboard sync failed:', e); }
   },
 
   cut() {
@@ -217,6 +224,12 @@ const app = {
   },
 
   paste() {
+    // Try to sync from localStorage first
+    try {
+      const stored = localStorage.getItem('hopedraw_clipboard');
+      if (stored) this._clipboard = JSON.parse(stored);
+    } catch (e) { console.warn('Clipboard fetch failed, using local.'); }
+
     if (!this._clipboard || !this._clipboard.length) return;
 
     // We operate on a fresh deep clone of clipboard data to allow repeated pastes
@@ -314,7 +327,7 @@ function init() {
 
   // Toolbar button bindings
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
-    btn.addEventListener('click', () => app.setActiveTool(btn.dataset.tool));
+    btn.addEventListener('click', () => app.setActiveTool(btn.dataset.tool, true));
   });
 
   // Activate default tool

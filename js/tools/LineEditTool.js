@@ -119,9 +119,8 @@ export class LineEditTool {
       return;
     }
 
-    wx = this.app.canvas.snap(wx);
-    wy = this.app.canvas.snap(wy);
-
+    // We do NOT snap wx/wy here so that we have high-precision starting points 
+    // for calculating the drag delta in onPointerMove.
     this._snapshot = this._shape.snapshotState();
     this._dragging = {
       handle,
@@ -136,22 +135,21 @@ export class LineEditTool {
 
   onPointerMove(wx, wy, e) {
     if (!this._dragging) return;
-    wx = this.app.canvas.snap(wx);
-    wy = this.app.canvas.snap(wy);
-
     const { handle, startWx, startWy, snap } = this._dragging;
+    const canvas = this.app.canvas;
+
     const dx = wx - startWx;
     const dy = wy - startWy;
 
     if (handle === 'p1') {
-      this._shape.x = snap.x + dx;
-      this._shape.y = snap.y + dy;
+      this._shape.x = canvas.snap(snap.x + dx);
+      this._shape.y = canvas.snap(snap.y + dy);
     } else if (handle === 'p2') {
-      this._shape.x2 = snap.x2 + dx;
-      this._shape.y2 = snap.y2 + dy;
+      this._shape.x2 = canvas.snap(snap.x2 + dx);
+      this._shape.y2 = canvas.snap(snap.y2 + dy);
     } else if (handle === 'cp') {
-      this._shape.cpx = snap.cpx + dx;
-      this._shape.cpy = snap.cpy + dy;
+      this._shape.cpx = canvas.snap(snap.cpx + dx);
+      this._shape.cpy = canvas.snap(snap.cpy + dy);
     }
 
     this._shape.render();
