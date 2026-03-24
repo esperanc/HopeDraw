@@ -94,6 +94,10 @@ export class ArcShape extends Shape {
     }
   }
 
+  hitTest(wx, wy) {
+    return this._pointInRotatedBBox(wx, wy);
+  }
+
   getCustomHandles() {
     const rx = Math.max(1, this.width / 2);
     const ry = Math.max(1, this.height / 2);

@@ -18,6 +18,7 @@ export class SelectionManager {
     this._rotateEl   = null;
     this._rotateLinEl = null;
     this._anchor = null;
+    this._arcEditMode = false; // when true, only custom arc handles are shown
   }
 
   setApp(app) {
@@ -54,6 +55,7 @@ export class SelectionManager {
 
   clear() {
     this._ids.clear();
+    this._arcEditMode = false;
     this._clearHandles();
     this._notify();
   }
@@ -79,6 +81,22 @@ export class SelectionManager {
     }
     this.bus.emit(Events.SELECTION_CHANGED, { ids: [...this._ids] });
   }
+
+  // ─── Arc angle-edit mode ─────────────────────────────────────────────────
+
+  /** Enter arc angle-edit mode: hide bbox handles, keep custom arc handles only */
+  enterArcEditMode() {
+    this._arcEditMode = true;
+    this._redrawHandles();
+  }
+
+  /** Exit arc angle-edit mode and restore full handles */
+  exitArcEditMode() {
+    this._arcEditMode = false;
+    this._redrawHandles();
+  }
+
+  get isArcEditMode() { return this._arcEditMode; }
 
   // ─── Handles ─────────────────────────────────────────────────────────────
 
@@ -125,67 +143,85 @@ export class SelectionManager {
     }
 
     const layer = this.canvas.handlesLayer;
+    const arcEdit = this._arcEditMode && shapes.length === 1 && shapes[0].type === 'arc';
 
     // ── Wrapper group: rotating this gives the live preview during drag ────
     const grp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     this._handlesGroup = grp;
     layer.appendChild(grp);
 
-    // Selection rectangle
-    const selRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    selRect.setAttribute('x', x); selRect.setAttribute('y', y);
-    selRect.setAttribute('width', w); selRect.setAttribute('height', h);
-    selRect.setAttribute('fill', 'none');
-    selRect.setAttribute('stroke', '#6c63ff');
-    selRect.setAttribute('stroke-width', 1 / this.canvas.zoom);
-    selRect.setAttribute('stroke-dasharray', `${4/this.canvas.zoom} ${2/this.canvas.zoom}`);
-    selRect.setAttribute('transform', `rotate(${rotation},${cx},${cy})`);
-    selRect.setAttribute('pointer-events', 'none');
-    grp.appendChild(selRect);
+    if (!arcEdit) {
+      // Selection rectangle
+      const selRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      selRect.setAttribute('x', x); selRect.setAttribute('y', y);
+      selRect.setAttribute('width', w); selRect.setAttribute('height', h);
+      selRect.setAttribute('fill', 'none');
+      selRect.setAttribute('stroke', '#6c63ff');
+      selRect.setAttribute('stroke-width', 1 / this.canvas.zoom);
+      selRect.setAttribute('stroke-dasharray', `${4/this.canvas.zoom} ${2/this.canvas.zoom}`);
+      selRect.setAttribute('transform', `rotate(${rotation},${cx},${cy})`);
+      selRect.setAttribute('pointer-events', 'none');
+      grp.appendChild(selRect);
 
-    // Resize & rotate handles
-    const handles = [
-      { id: 'TL', tx: x,     ty: y     }, { id: 'T',  tx: cx,    ty: y     },
-      { id: 'TR', tx: x + w, ty: y     }, { id: 'ML', tx: x,     ty: cy    },
-      { id: 'MR', tx: x + w, ty: cy    }, { id: 'BL', tx: x,     ty: y + h },
-      { id: 'B',  tx: cx,    ty: y + h }, { id: 'BR', tx: x + w, ty: y + h },
-    ];
+      // Resize & rotate handles
+      const handles = [
+        { id: 'TL', tx: x,     ty: y     }, { id: 'T',  tx: cx,    ty: y     },
+        { id: 'TR', tx: x + w, ty: y     }, { id: 'ML', tx: x,     ty: cy    },
+        { id: 'MR', tx: x + w, ty: cy    }, { id: 'BL', tx: x,     ty: y + h },
+        { id: 'B',  tx: cx,    ty: y + h }, { id: 'BR', tx: x + w, ty: y + h },
+      ];
+      const hs = HANDLE_SIZE / this.canvas.zoom;
+      handles.forEach(({ id, tx, ty }) => {
+        const [rx, ry] = this._rotatePoint(tx, ty, cx, cy, rotation);
+        const el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        el.setAttribute('x', rx - hs / 2); el.setAttribute('y', ry - hs / 2);
+        el.setAttribute('width', hs); el.setAttribute('height', hs);
+        el.setAttribute('fill', '#ffffff'); el.setAttribute('stroke', '#6c63ff');
+        el.setAttribute('stroke-width', 1 / this.canvas.zoom);
+        el.setAttribute('rx', ['TL','TR','BL','BR'].includes(id) ? 1 : 0);
+        el.style.cursor = this._handleCursor(id, rotation);
+        el.dataset.handle = id;
+        grp.appendChild(el);
+        this._handleEls.push(el);
+      });
+
+      // Rotate handle
+      const rotY  = y - ROTATE_OFFSET / this.canvas.zoom;
+      const [rRx, rRy]   = this._rotatePoint(cx, rotY, cx, cy, rotation);
+      const [lineX, lineY] = this._rotatePoint(cx, y,   cx, cy, rotation);
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', lineX); line.setAttribute('y1', lineY);
+      line.setAttribute('x2', rRx);   line.setAttribute('y2', rRy);
+      line.setAttribute('stroke', '#6c63ff'); line.setAttribute('stroke-width', 1/this.canvas.zoom);
+      line.setAttribute('pointer-events', 'none');
+      grp.appendChild(line);
+
+      const rotHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      rotHandle.setAttribute('cx', rRx); rotHandle.setAttribute('cy', rRy);
+      rotHandle.setAttribute('r', (hs/2) * 1.2);
+      rotHandle.setAttribute('fill', '#6c63ff'); rotHandle.setAttribute('stroke', '#fff');
+      rotHandle.setAttribute('stroke-width', 1/this.canvas.zoom);
+      rotHandle.style.cursor = 'crosshair';
+      rotHandle.dataset.handle = 'ROTATE';
+      grp.appendChild(rotHandle);
+      this._handleEls.push(rotHandle);
+    } else {
+      // Arc edit mode: draw a subtle dashed outline only (no handles)
+      const selRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      selRect.setAttribute('x', x); selRect.setAttribute('y', y);
+      selRect.setAttribute('width', w); selRect.setAttribute('height', h);
+      selRect.setAttribute('fill', 'none');
+      selRect.setAttribute('stroke', '#f5a623');
+      selRect.setAttribute('stroke-width', 1 / this.canvas.zoom);
+      selRect.setAttribute('stroke-dasharray', `${4/this.canvas.zoom} ${2/this.canvas.zoom}`);
+      selRect.setAttribute('stroke-opacity', '0.45');
+      selRect.setAttribute('transform', `rotate(${rotation},${cx},${cy})`);
+      selRect.setAttribute('pointer-events', 'none');
+      grp.appendChild(selRect);
+    }
+
     const hs = HANDLE_SIZE / this.canvas.zoom;
-    handles.forEach(({ id, tx, ty }) => {
-      const [rx, ry] = this._rotatePoint(tx, ty, cx, cy, rotation);
-      const el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      el.setAttribute('x', rx - hs / 2); el.setAttribute('y', ry - hs / 2);
-      el.setAttribute('width', hs); el.setAttribute('height', hs);
-      el.setAttribute('fill', '#ffffff'); el.setAttribute('stroke', '#6c63ff');
-      el.setAttribute('stroke-width', 1 / this.canvas.zoom);
-      el.setAttribute('rx', ['TL','TR','BL','BR'].includes(id) ? 1 : 0);
-      el.style.cursor = this._handleCursor(id, rotation);
-      el.dataset.handle = id;
-      grp.appendChild(el);
-      this._handleEls.push(el);
-    });
-
-    // Rotate handle
-    const rotY  = y - ROTATE_OFFSET / this.canvas.zoom;
-    const [rRx, rRy]   = this._rotatePoint(cx, rotY, cx, cy, rotation);
-    const [lineX, lineY] = this._rotatePoint(cx, y,   cx, cy, rotation);
-
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', lineX); line.setAttribute('y1', lineY);
-    line.setAttribute('x2', rRx);   line.setAttribute('y2', rRy);
-    line.setAttribute('stroke', '#6c63ff'); line.setAttribute('stroke-width', 1/this.canvas.zoom);
-    line.setAttribute('pointer-events', 'none');
-    grp.appendChild(line);
-
-    const rotHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    rotHandle.setAttribute('cx', rRx); rotHandle.setAttribute('cy', rRy);
-    rotHandle.setAttribute('r', (hs/2) * 1.2);
-    rotHandle.setAttribute('fill', '#6c63ff'); rotHandle.setAttribute('stroke', '#fff');
-    rotHandle.setAttribute('stroke-width', 1/this.canvas.zoom);
-    rotHandle.style.cursor = 'crosshair';
-    rotHandle.dataset.handle = 'ROTATE';
-    grp.appendChild(rotHandle);
-    this._handleEls.push(rotHandle);
 
     // Custom shape-specific handles (only for single selection)
     if (shapes.length === 1 && typeof shapes[0].getCustomHandles === 'function') {
@@ -193,10 +229,10 @@ export class SelectionManager {
       customHandles.forEach(({ id, tx, ty, color }) => {
         const el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         el.setAttribute('cx', tx); el.setAttribute('cy', ty);
-        el.setAttribute('r', hs / 1.5);
+        el.setAttribute('r', arcEdit ? hs / 1.1 : hs / 1.5);
         el.setAttribute('fill', color || '#f5a623');
         el.setAttribute('stroke', '#fff');
-        el.setAttribute('stroke-width', 1.5 / this.canvas.zoom);
+        el.setAttribute('stroke-width', (arcEdit ? 2 : 1.5) / this.canvas.zoom);
         el.style.cursor = 'crosshair';
         el.dataset.handle = id;
         el.dataset.custom = 'true';
@@ -226,7 +262,12 @@ export class SelectionManager {
     }
     this._handleEls = [];
     this._selBBox   = null;
+    // NOTE: do NOT reset _arcEditMode here — this method is called at the
+    // start of every _redrawHandles(), so resetting it here would prevent
+    // enterArcEditMode() from ever taking effect.
+    // _arcEditMode is reset only in clear() and exitArcEditMode().
   }
+
 
   /** Returns handle ID ('TL','T',...,'ROTATE') if client coords hit a handle, else null */
   hitHandle(worldX, worldY) {

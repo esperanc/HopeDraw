@@ -164,19 +164,18 @@ export class ProjectManager {
       }
 
       // ── Serialize ─────────────────────────────────────────────────────────
+      // Clone the layer for cleaning to avoid corrupting the live UI
+      const shapesClone = shapesLayer.cloneNode(true);
+      shapesClone.querySelectorAll('.export-ignore').forEach(el => el.remove());
+
       const serializer = new XMLSerializer();
-      let shapesStr = serializer.serializeToString(shapesLayer);
+      let shapesStr = serializer.serializeToString(shapesClone);
 
       // Restore swapped formula elements before any early-exit
       for (const { img, fo } of swaps) img.replaceWith(fo);
 
       // Sanitize NaN values
       shapesStr = shapesStr.replace(/\bNaN\b/g, '0');
-
-      // Strip elements marked as export-ignore (like GroupShape blue dashed boxes)
-      // This matches both self-closing and paired tags with the export-ignore class
-      shapesStr = shapesStr.replace(/<[A-Za-z0-9]+[^>]*class="[^"]*export-ignore[^"]*"[^>]*>[\s\S]*?<\/[A-Za-z0-9]+>/g, '');
-      shapesStr = shapesStr.replace(/<[A-Za-z0-9]+[^>]*class="[^"]*export-ignore[^"]*"[^>]*\/>/g, '');
 
       // Strip KaTeX mathml for browsers that don't need it
       shapesStr = shapesStr.replace(/<span[^>]*class="[^"]*katex-mathml[^"]*"[\s\S]*?<\/span>/g, '');

@@ -29,6 +29,7 @@ import { HandTool }         from './tools/HandTool.js';
 import { PathTool }         from './tools/PathTool.js';
 import { PathEditTool }     from './tools/PathEditTool.js';
 import { LineEditTool }     from './tools/LineEditTool.js';
+import { ArcEditTool }      from './tools/ArcEditTool.js';
 
 
 import { PropertiesPanel }  from './ui/PropertiesPanel.js';
@@ -317,6 +318,7 @@ function init() {
     pen:            new PathTool(app),
     'path-edit':    new PathEditTool(app),
     'line-edit':    new LineEditTool(app),
+    'arc-edit':     new ArcEditTool(app),
   };
 
 

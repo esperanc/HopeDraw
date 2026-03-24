@@ -22,6 +22,22 @@ export class EllipseShape extends Shape {
     this._applyStrokeStyle(e);
   }
 
+  hitTest(wx, wy) {
+    if (!this._ellipse) return this._pointInRotatedBBox(wx, wy);
+    const svg = this._ellipse.ownerSVGElement;
+    if (svg?.createSVGPoint) {
+      try {
+        const pt = svg.createSVGPoint();
+        pt.x = wx; pt.y = wy;
+        if (this._ellipse.isPointInStroke?.(pt)) return true;
+        const hasFill = this.fill && this.fill !== 'none' && this.fill !== 'transparent';
+        if (hasFill && this._ellipse.isPointInFill?.(pt)) return true;
+        return false;
+      } catch (_) {}
+    }
+    return this._pointInRotatedBBox(wx, wy);
+  }
+
   toPathShape() {
     const k = 4 * (Math.sqrt(2) - 1) / 3;
     const { x, y, width: w, height: h, rotation } = this;

@@ -25,6 +25,22 @@ export class RectShape extends Shape {
     this._applyStrokeStyle(r);
   }
 
+  hitTest(wx, wy) {
+    if (!this._rect) return this._pointInRotatedBBox(wx, wy);
+    const svg = this._rect.ownerSVGElement;
+    if (svg?.createSVGPoint) {
+      try {
+        const pt = svg.createSVGPoint();
+        pt.x = wx; pt.y = wy;
+        if (this._rect.isPointInStroke?.(pt)) return true;
+        const hasFill = this.fill && this.fill !== 'none' && this.fill !== 'transparent';
+        if (hasFill && this._rect.isPointInFill?.(pt)) return true;
+        return false;
+      } catch (_) {}
+    }
+    return this._pointInRotatedBBox(wx, wy);
+  }
+
   serialize() {
     return { ...super.serialize(), cornerRadius: this.cornerRadius };
   }

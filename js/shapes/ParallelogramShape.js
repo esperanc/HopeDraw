@@ -67,7 +67,25 @@ export class ParallelogramShape extends Shape {
    */
   hitTest(wx, wy) {
     const corners = this.getRotatedCorners();
-    return this._pointInPolygon(wx, wy, corners);
+    const hasFill = this.fill && this.fill !== 'none' && this.fill !== 'transparent';
+    if (hasFill) {
+      return this._pointInPolygon(wx, wy, corners);
+    }
+    // No fill — only hit on the stroke (edge proximity)
+    const tolerance = Math.max(6, this.strokeWidth / 2 + 4);
+    const n = corners.length;
+    for (let i = 0; i < n; i++) {
+      const [x1, y1] = corners[i];
+      const [x2, y2] = corners[(i + 1) % n];
+      const dx = x2 - x1, dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) continue;
+      let t = ((wx - x1) * dx + (wy - y1) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const nearX = x1 + t * dx, nearY = y1 + t * dy;
+      if (Math.hypot(wx - nearX, wy - nearY) <= tolerance) return true;
+    }
+    return false;
   }
 
   _pointInPolygon(px, py, vertices) {

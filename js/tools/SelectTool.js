@@ -22,6 +22,9 @@ export class SelectTool {
     this._snapshots = null;
     this._activeHandle = null;
     this._rubberEl = null;
+    // Manual double-click tracker — native dblclick is unreliable when
+    // setPointerCapture is called on the first pointerdown.
+    this._lastClick = null; // { id, wx, wy, time }
   }
 
   activate() { this.app.canvas.svg.style.cursor = 'default'; }
@@ -29,10 +32,42 @@ export class SelectTool {
 
   onPointerDown(wx, wy, e) {
     const app = this.app;
+
+    // ── Arc double-click check runs FIRST, before handle hit-testing ──────────
+    // After the first click, bbox handles appear on top of the arc. Without this
+    // early check, the second click of a double-click lands on a handle, resets
+    // _lastClick, and the double-click is never detected.
+    const hitForDbl = this._hitTestShapes(wx, wy);
+    if (hitForDbl && hitForDbl.type === 'arc') {
+      const now = Date.now();
+      const lc  = this._lastClick;
+      const isDbl = lc &&
+        lc.id === hitForDbl.id &&
+        (now - lc.time) < 700 &&
+        Math.hypot(wx - lc.wx, wy - lc.wy) < 15;
+      this._lastClick = { id: hitForDbl.id, wx, wy, time: now };
+
+      if (isDbl) {
+        const editTool = app.tools['arc-edit'];
+        if (editTool) {
+          if (app._activeTool?.deactivate) app._activeTool.deactivate();
+          app._activeTool     = editTool;
+          app._activeToolName = 'arc-edit';
+          app.canvas.setActiveTool(editTool);
+          editTool.editShape(hitForDbl);
+        }
+        this._lastClick = null;
+        return;
+      }
+    }
+
+    // ── Normal handle / shape interaction ─────────────────────────────────────
     const handle = app.selection.hitHandle(wx, wy);
 
     if (handle) {
-      // Begin handle transform
+      // Begin handle transform (do NOT reset _lastClick here — Phase 1 already
+      // set it to the arc shape; clearing it would break dblclick detection on
+      // the arc when the second click happens to land on a bbox handle corner).
       this._state = 'handle';
       this._activeHandle = handle;
       this._start = { wx, wy };
@@ -50,11 +85,17 @@ export class SelectTool {
       return;
     }
 
-    // Hit test shapes (reverse: topmost first)
+    // Hit test shapes
     const hit = this._hitTestShapes(wx, wy);
 
     if (hit) {
+      // Update lastClick for non-arc shapes (arc is handled above)
+      if (hit.type !== 'arc') {
+        this._lastClick = { id: hit.id, wx, wy, time: Date.now() };
+      }
+
       if (!app.selection.hasSelectedFor(hit.id)) {
+        if (app.selection.isArcEditMode) app.selection.exitArcEditMode();
         app.selection.select(hit.id, e.shiftKey);
       } else if (e.shiftKey) {
         app.selection.deselect(hit.id);
@@ -66,8 +107,11 @@ export class SelectTool {
       this._snapshots = { before: new Map(shapes.map(s => [s.id, s.snapshotState()])) };
       app.canvas.svg.setPointerCapture?.(e.pointerId);
     } else {
-      // Clear selection + rubber band
-      if (!e.shiftKey) app.selection.clear();
+      this._lastClick = null;
+      if (!e.shiftKey) {
+        if (app.selection.isArcEditMode) app.selection.exitArcEditMode();
+        app.selection.clear();
+      }
       this._state = 'rubber';
       this._start = { wx, wy };
       this._startRubber(wx, wy);
@@ -165,6 +209,20 @@ export class SelectTool {
   onDblClick(wx, wy, e) {
     const hit = this._hitTestShapes(wx, wy);
     if (!hit) return;
+    if (hit.type === 'arc') {
+      // Enter arc angle-edit mode — same pattern as path/line edit tools
+      const editTool = this.app.tools['arc-edit'];
+      if (editTool) {
+        if (this.app._activeTool?.deactivate) this.app._activeTool.deactivate();
+        this.app._activeTool     = editTool;
+        this.app._activeToolName = 'arc-edit';
+        this.app.canvas.setActiveTool(editTool);
+        editTool.editShape(hit);
+      }
+      return;
+    }
+    // Exiting arc edit mode if we dbl-click another shape type
+    if (this.app.selection.isArcEditMode) this.app.selection.exitArcEditMode();
     if (hit.type === 'text') {
       hit.enterEditMode();
       // exit on click outside
@@ -206,6 +264,15 @@ export class SelectTool {
   onKeyDown(e) {
     const app = this.app;
     const shapes = app.selection.selectedShapes();
+
+    // Escape exits arc angle-edit mode
+    if (e.key === 'Escape') {
+      if (app.selection.isArcEditMode) {
+        app.selection.exitArcEditMode();
+        return;
+      }
+    }
+
     if (!shapes.length) return;
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
