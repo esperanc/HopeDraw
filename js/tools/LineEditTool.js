@@ -47,6 +47,20 @@ export class LineEditTool {
     this._handleEls = [];
   }
 
+  /**
+   * Compute the effective curve control point, matching LineShape.render().
+   * Returns the stored value if set, otherwise the auto-offset midpoint.
+   */
+  _effectiveCp(s) {
+    if (s.cpx !== null) return { cpx: s.cpx, cpy: s.cpy };
+    const mx = (s.x + s.x2) / 2, my = (s.y + s.y2) / 2;
+    const dl = Math.hypot(s.x2 - s.x, s.y2 - s.y) || 1;
+    return {
+      cpx: mx + (-(s.y2 - s.y) / dl) * dl * 0.25,
+      cpy: my + ( (s.x2 - s.x) / dl) * dl * 0.25,
+    };
+  }
+
   _rebuild() {
     this._clearHandles();
     if (!this._shape) return;
@@ -54,7 +68,7 @@ export class LineEditTool {
     const ns    = 'http://www.w3.org/2000/svg';
     const z     = this.app.canvas.zoom;
     const hs    = 7 / z;   // anchor half-size
-    const cpr   = 4 / z;   // control-point radius
+    const cpr   = 5 / z;   // control-point radius
     const sw    = 1.5 / z;
     const tsw   = 1 / z;
     const s     = this._shape;
@@ -66,20 +80,22 @@ export class LineEditTool {
       return el;
     };
 
-    // ── Bézier control point & tangents ────────────────────────────────────
-    if (s.lineMode === 'curve' && s.cpx !== null) {
+    // ── Curve: Bézier control point & tangent guide lines ─────────────────
+    if (s.lineMode === 'curve') {
+      const { cpx, cpy } = this._effectiveCp(s);
+
       const l1 = mk('line', {
-        x1: s.x, y1: s.y, x2: s.cpx, y2: s.cpy,
+        x1: s.x, y1: s.y, x2: cpx, y2: cpy,
         stroke: 'rgba(108,99,255,0.5)', 'stroke-width': tsw,
         'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
       });
       const l2 = mk('line', {
-        x1: s.x2, y1: s.y2, x2: s.cpx, y2: s.cpy,
+        x1: s.x2, y1: s.y2, x2: cpx, y2: cpy,
         stroke: 'rgba(108,99,255,0.5)', 'stroke-width': tsw,
         'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
       });
       const cp = mk('circle', {
-        cx: s.cpx, cy: s.cpy, r: cpr,
+        cx: cpx, cy: cpy, r: cpr,
         fill: '#6c63ff', stroke: '#fff', 'stroke-width': sw,
         cursor: 'move',
       });
@@ -88,13 +104,40 @@ export class LineEditTool {
       this._handleEls.push(l1, l2, cp);
     }
 
-    // ── Anchor squares ────────────────────────────────────────────────────
+    // ── Elbow: draggable bend-column handle ───────────────────────────────
+    if (s.lineMode === 'elbow') {
+      const mx = s.cpx ?? (s.x + s.x2) / 2;
+      const my = (s.y + s.y2) / 2;   // midpoint of the vertical segment
+
+      // Dashed vertical guide aligned with the bend column
+      const vline = mk('line', {
+        x1: mx, y1: s.y, x2: mx, y2: s.y2,
+        stroke: 'rgba(108,99,255,0.35)', 'stroke-width': tsw,
+        'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
+      });
+
+      // Diamond handle at the mid-point of the vertical segment
+      const sz  = hs * 0.9;
+      const pts = `${mx},${my - sz} ${mx + sz},${my} ${mx},${my + sz} ${mx - sz},${my}`;
+      const elbow = mk('polygon', {
+        points: pts,
+        fill: '#6c63ff', stroke: '#fff', 'stroke-width': sw,
+        cursor: 'ew-resize',
+      });
+      elbow.dataset.handle = 'elbow';
+
+      layer.appendChild(vline);
+      layer.appendChild(elbow);
+      this._handleEls.push(vline, elbow);
+    }
+
+    // ── Anchor squares (endpoints) ─────────────────────────────────────────
     const a1 = mk('rect', {
       x: s.x - hs / 2, y: s.y - hs / 2, width: hs, height: hs,
       fill: '#fff', stroke: '#6c63ff', 'stroke-width': sw, cursor: 'move',
     });
     a1.dataset.handle = 'p1';
-    
+
     const a2 = mk('rect', {
       x: s.x2 - hs / 2, y: s.y2 - hs / 2, width: hs, height: hs,
       fill: '#fff', stroke: '#6c63ff', 'stroke-width': sw, cursor: 'move',
@@ -110,7 +153,7 @@ export class LineEditTool {
   onPointerDown(wx, wy, e) {
     if (e.button !== 0) return;
 
-    const el = e.target;
+    const el     = e.target;
     const handle = el.dataset?.handle;
 
     if (!handle) {
@@ -119,8 +162,17 @@ export class LineEditTool {
       return;
     }
 
-    // We do NOT snap wx/wy here so that we have high-precision starting points 
-    // for calculating the drag delta in onPointerMove.
+    // Lazily materialise cpx/cpy on first interaction with a control-point handle.
+    // This mirrors the auto-computed position used by render() and _rebuild().
+    if (handle === 'cp' && this._shape.cpx === null) {
+      const { cpx, cpy } = this._effectiveCp(this._shape);
+      this._shape.cpx = cpx;
+      this._shape.cpy = cpy;
+    }
+    if (handle === 'elbow' && this._shape.cpx === null) {
+      this._shape.cpx = (this._shape.x + this._shape.x2) / 2;
+    }
+
     this._snapshot = this._shape.snapshotState();
     this._dragging = {
       handle,
@@ -150,6 +202,9 @@ export class LineEditTool {
     } else if (handle === 'cp') {
       this._shape.cpx = canvas.snap(snap.cpx + dx);
       this._shape.cpy = canvas.snap(snap.cpy + dy);
+    } else if (handle === 'elbow') {
+      // Horizontal only — cpx stores the x-position of the bend column
+      this._shape.cpx = canvas.snap(snap.cpx + dx);
     }
 
     this._shape.render();
@@ -165,7 +220,7 @@ export class LineEditTool {
 
     this.app.commands.execute({
       label: 'Edit line points',
-      execute: () => { shape.applyState(after); shape.render(); },
+      execute: () => { shape.applyState(after);  shape.render(); },
       undo:    () => { shape.applyState(before); shape.render(); },
     });
 

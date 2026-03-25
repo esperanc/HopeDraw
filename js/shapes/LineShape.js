@@ -51,11 +51,41 @@ export class LineShape extends Shape {
       const dx = px - pivotX, dy = py - pivotY;
       return [pivotX + dx * cos - dy * sin, pivotY + dx * sin + dy * cos];
     };
-    [this.x,  this.y]  = rotatePt(this.x, this.y);
-    [this.x2, this.y2] = rotatePt(this.x2, this.y2);
-    if (this.cpx != null) [this.cpx, this.cpy] = rotatePt(this.cpx, this.cpy);
+
+    if (this.lineMode === 'elbow') {
+      // Read the bend fraction from PRE-rotation coordinates.
+      const oldMx  = this.cpx ?? (this.x + this.x2) / 2;
+      const xRange = this.x2 - this.x;
+      const frac   = Math.abs(xRange) > 0.1 ? (oldMx - this.x) / xRange : 0.5;
+
+      [this.x,  this.y]  = rotatePt(this.x, this.y);
+      [this.x2, this.y2] = rotatePt(this.x2, this.y2);
+
+      // Restore the relative bend in the new coordinate space.
+      const newXRange = this.x2 - this.x;
+      this.cpx = Math.abs(newXRange) > 0.1 ? this.x + frac * newXRange : null;
+
+    } else if (this.lineMode === 'curve') {
+      // Materialise cpx before rotating so the control point follows correctly.
+      if (this.cpx === null) {
+        const mx = (this.x + this.x2) / 2, my = (this.y + this.y2) / 2;
+        const dl = Math.hypot(this.x2 - this.x, this.y2 - this.y) || 1;
+        this.cpx = mx + (-(this.y2 - this.y) / dl) * dl * 0.25;
+        this.cpy = my + ( (this.x2 - this.x) / dl) * dl * 0.25;
+      }
+      [this.x,  this.y]  = rotatePt(this.x, this.y);
+      [this.x2, this.y2] = rotatePt(this.x2, this.y2);
+      [this.cpx, this.cpy] = rotatePt(this.cpx, this.cpy);
+
+    } else {
+      [this.x,  this.y]  = rotatePt(this.x, this.y);
+      [this.x2, this.y2] = rotatePt(this.x2, this.y2);
+    }
+
     this.render();
   }
+
+
 
   /**
    * Read the current visual angle of the line (in degrees).
@@ -96,15 +126,54 @@ export class LineShape extends Shape {
 
     const { x: x1, y: y1, x2, y2, stroke, strokeWidth } = this;
 
-    // Compute path data
+    const sbS = this._arrowSetback(this.arrowStart);
+    const sbE = this._arrowSetback(this.arrowEnd);
+
+    // Tangent unit vectors at each endpoint — used for BOTH path setback and
+    // arrowhead direction.  uxS/uyS points AWAY from the start; uxE/uyE points
+    // INTO the end (i.e. in the direction the line is travelling at that end).
+    let uxS, uyS, uxE, uyE;
     let d;
-    if (this.lineMode === 'curve' && this.cpx !== null) {
-      d = `M ${x1} ${y1} Q ${this.cpx} ${this.cpy} ${x2} ${y2}`;
+
+    if (this.lineMode === 'curve') {
+      // Resolve control point — auto-initialise with a small perpendicular
+      // offset so the curve is visible even before the user drags it.
+      let cpx = this.cpx, cpy = this.cpy;
+      if (cpx === null) {
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const dl = Math.hypot(x2 - x1, y2 - y1) || 1;
+        // 25 % of line length, perpendicular to the line
+        cpx = mx + (-(y2 - y1) / dl) * dl * 0.25;
+        cpy = my + ( (x2 - x1) / dl) * dl * 0.25;
+      }
+      // Tangent at start = P0→P1 (toward control point)
+      const d1x = cpx - x1, d1y = cpy - y1, l1 = Math.hypot(d1x, d1y) || 1;
+      // Tangent at end   = P1→P2 (from control point toward endpoint)
+      const d2x = x2 - cpx, d2y = y2 - cpy, l2 = Math.hypot(d2x, d2y) || 1;
+      uxS = d1x / l1; uyS = d1y / l1;
+      uxE = d2x / l2; uyE = d2y / l2;
+      const px1 = x1 + uxS * sbS, py1 = y1 + uyS * sbS;
+      const px2 = x2 - uxE * sbE, py2 = y2 - uyE * sbE;
+      d = `M ${px1} ${py1} Q ${cpx} ${cpy} ${px2} ${py2}`;
+
     } else if (this.lineMode === 'elbow') {
-      const mx = (x1 + x2) / 2;
-      d = `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
+      const mx = this.cpx ?? (x1 + x2) / 2;
+      // Start segment is horizontal (x1,y1)→(mx,y1); end segment is horizontal (mx,y2)→(x2,y2)
+      uxS = Math.sign(mx - x1) || 1;  uyS = 0;
+      uxE = Math.sign(x2 - mx) || 1;  uyE = 0;
+      const sxS = x1 + uxS * sbS;
+      const sxE = x2 - uxE * sbE;
+      d = `M ${sxS} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${sxE} ${y2}`;
+
     } else {
-      d = `M ${x1} ${y1} L ${x2} ${y2}`;
+      // Straight line
+      const dxL = x2 - x1, dyL = y2 - y1;
+      const len = Math.hypot(dxL, dyL) || 1;
+      uxS = dxL / len; uyS = dyL / len;
+      uxE = uxS; uyE = uyS;
+      const px1 = x1 + uxS * sbS, py1 = y1 + uyS * sbS;
+      const px2 = x2 - uxE * sbE, py2 = y2 - uyE * sbE;
+      d = `M ${px1} ${py1} L ${px2} ${py2}`;
     }
 
     this._path.setAttribute('d', d);
@@ -114,10 +183,30 @@ export class LineShape extends Shape {
     this._path.setAttribute('stroke-dasharray', this._strokeDashArray());
     this._path.setAttribute('stroke-linecap', 'round');
 
-    // Draw arrow caps
-    this._renderCap(this._capS, x1, y1, x2, y2, this.arrowStart, true);
-    this._renderCap(this._capE, x2, y2, x1, y1, this.arrowEnd, false);
+    // Pass correct tangent direction to _renderCap via a synthetic "from" point:
+    //   _renderCap computes direction = (tipX - fromX, tipY - fromY)
+    //   so set fromX = tipX - ux, fromY = tipY - uy  (unit vector away from tip)
+    this._renderCap(this._capS, x1, y1, x1 - uxS, y1 - uyS, this.arrowStart, true);
+    this._renderCap(this._capE, x2, y2, x2 - uxE, y2 - uyE, this.arrowEnd, false);
   }
+
+  /**
+   * How far to pull the path endpoint back from the arrowhead tip so the
+   * round linecap sits entirely inside the arrowhead body.
+   *
+   * Derivation for filled triangle (half-width sw = arrowSize * 0.55):
+   *   At position `d` behind the tip, the triangle's half-width = sw * d / s.
+   *   The round cap radius = strokeWidth / 2.
+   *   They meet when sw * d / s = strokeWidth / 2  →  d = strokeWidth * s / (2*sw)
+   *                                                   = strokeWidth / (2*0.55)
+   *                                                   ≈ strokeWidth / 1.1
+   * Capped at 80 % of arrowSize to ensure the endpoint stays within the head.
+   */
+  _arrowSetback(style) {
+    if (style === 'none' || style === 'open') return 0;
+    return Math.min(this.strokeWidth / 1.1, this.arrowSize * 0.8);
+  }
+
 
   _renderCap(g, tipX, tipY, fromX, fromY, style, isStart) {
     while (g.firstChild) g.firstChild.remove();
@@ -130,10 +219,8 @@ export class LineShape extends Shape {
     const nx = -uy, ny = ux;
     const { stroke, strokeWidth } = this;
 
-    // Shift the arrow tip outward by half the stroke width so it covers the line's 'round' linecap
-    const offset = strokeWidth / 2;
-    tipX += ux * offset;
-    tipY += uy * offset;
+    // The path has already been shortened so the round linecap sits inside the
+    // arrowhead — no outward tip shift is needed here.
 
     const s = this.arrowSize;
     const sw = s * 0.55;
@@ -180,23 +267,100 @@ export class LineShape extends Shape {
   // ─── Overrides ────────────────────────────────────────────────────────────
 
   getBBox() {
-    const minX = Math.min(this.x, this.x2);
-    const minY = Math.min(this.y, this.y2);
-    const maxX = Math.max(this.x, this.x2);
-    const maxY = Math.max(this.y, this.y2);
-    return { x: minX, y: minY, w: maxX - minX || 1, h: maxY - minY || 1 };
+    const { x: x1, y: y1, x2, y2 } = this;
+
+    if (this.lineMode === 'elbow') {
+      // Include the bend column x-position in the bounding box
+      const mx = this.cpx ?? (x1 + x2) / 2;
+      const xs = [x1, x2, mx];
+      return {
+        x: Math.min(...xs),
+        y: Math.min(y1, y2),
+        w: Math.max(...xs) - Math.min(...xs) || 1,
+        h: Math.max(y1, y2) - Math.min(y1, y2) || 1,
+      };
+    }
+
+    if (this.lineMode === 'curve') {
+      // Compute effective control point (same formula as render())
+      let cpx = this.cpx, cpy = this.cpy;
+      if (cpx === null) {
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const dl = Math.hypot(x2 - x1, y2 - y1) || 1;
+        cpx = mx + (-(y2 - y1) / dl) * dl * 0.25;
+        cpy = my + ( (x2 - x1) / dl) * dl * 0.25;
+      }
+      // Quadratic Bézier extremum for one axis: t = (p0 - p1) / (p0 - 2p1 + p2)
+      const extreme = (p0, p1, p2) => {
+        const denom = p0 - 2 * p1 + p2;
+        if (Math.abs(denom) < 1e-9) return [];
+        const t = (p0 - p1) / denom;
+        if (t <= 0 || t >= 1) return [];
+        const mt = 1 - t;
+        return [mt * mt * p0 + 2 * mt * t * p1 + t * t * p2];
+      };
+      const xs = [x1, x2, ...extreme(x1, cpx, x2)];
+      const ys = [y1, y2, ...extreme(y1, cpy, y2)];
+      return {
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        w: Math.max(...xs) - Math.min(...xs) || 1,
+        h: Math.max(...ys) - Math.min(...ys) || 1,
+      };
+    }
+
+    // Straight line
+    return {
+      x: Math.min(x1, x2),
+      y: Math.min(y1, y2),
+      w: Math.max(x1, x2) - Math.min(x1, x2) || 1,
+      h: Math.max(y1, y2) - Math.min(y1, y2) || 1,
+    };
   }
 
   hitTest(wx, wy) {
     const { x: x1, y: y1, x2, y2 } = this;
-    const dx = x2 - x1, dy = y2 - y1;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.hypot(wx - x1, wy - y1) < 6;
-    let t = ((wx - x1) * dx + (wy - y1) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-    const nearX = x1 + t * dx, nearY = y1 + t * dy;
-    return Math.hypot(wx - nearX, wy - nearY) <= Math.max(6, this.strokeWidth + 4);
+    const thr = Math.max(6, this.strokeWidth + 4);
+
+    // Helper: distance from point (px,py) to segment (ax,ay)→(bx,by)
+    const segDist = (px, py, ax, ay, bx, by) => {
+      const ddx = bx - ax, ddy = by - ay;
+      const lenSq = ddx * ddx + ddy * ddy;
+      if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+      const t = Math.max(0, Math.min(1, ((px - ax) * ddx + (py - ay) * ddy) / lenSq));
+      return Math.hypot(px - (ax + t * ddx), py - (ay + t * ddy));
+    };
+
+    if (this.lineMode === 'elbow') {
+      const mx = this.cpx ?? (x1 + x2) / 2;
+      // Hit-test all three segments of the elbow
+      return segDist(wx, wy, x1, y1, mx, y1) <= thr ||
+             segDist(wx, wy, mx, y1, mx, y2) <= thr ||
+             segDist(wx, wy, mx, y2, x2, y2) <= thr;
+    }
+
+    if (this.lineMode === 'curve') {
+      // Sample along the quadratic bezier
+      let cpx = this.cpx, cpy = this.cpy;
+      if (cpx === null) {
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const dl = Math.hypot(x2 - x1, y2 - y1) || 1;
+        cpx = mx + (-(y2 - y1) / dl) * dl * 0.25;
+        cpy = my + ( (x2 - x1) / dl) * dl * 0.25;
+      }
+      for (let i = 0; i <= 20; i++) {
+        const t = i / 20, mt = 1 - t;
+        const qx = mt * mt * x1 + 2 * mt * t * cpx + t * t * x2;
+        const qy = mt * mt * y1 + 2 * mt * t * cpy + t * t * y2;
+        if (Math.hypot(wx - qx, wy - qy) <= thr) return true;
+      }
+      return false;
+    }
+
+    // Straight line
+    return segDist(wx, wy, x1, y1, x2, y2) <= thr;
   }
+
 
   translate(dx, dy) {
     this.x  += dx; this.y  += dy;

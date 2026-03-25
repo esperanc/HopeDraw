@@ -103,7 +103,6 @@ export class PropertiesPanel {
       html += this._colorRow('Fill', 'fill', s.fill);
       html += this._colorRow('Stroke', 'stroke', s.stroke);
       html += this._numRow('Stroke Width', 'strokeWidth', s.strokeWidth, 0.5, 20, 0.5);
-      html += this._opacityRow(s.opacity);
       html += this._selectRow('Line Style', 'strokeDash', s.strokeDash, [
         ['solid','Solid'], ['dashed','Dashed'], ['dotted','Dotted'],
       ]);
@@ -298,14 +297,6 @@ export class PropertiesPanel {
       <label>${label}</label>
       <input type="number" data-prop="${prop}" value="${value}" min="${min}" max="${max}" step="${step}">
       ${suffix ? `<span class="prop-suffix">${suffix}</span>` : ''}
-    </div>`;
-  }
-
-  _opacityRow(value) {
-    return `<div class="prop-row">
-      <label>Opacity</label>
-      <input type="range" data-prop="opacity" value="${value}" min="0" max="1" step="0.05" style="flex:1">
-      <span class="prop-suffix">${Math.round(value*100)}%</span>
     </div>`;
   }
 
