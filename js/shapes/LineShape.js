@@ -53,17 +53,13 @@ export class LineShape extends Shape {
     };
 
     if (this.lineMode === 'elbow') {
-      // Read the bend fraction from PRE-rotation coordinates.
-      const oldMx  = this.cpx ?? (this.x + this.x2) / 2;
-      const xRange = this.x2 - this.x;
-      const frac   = Math.abs(xRange) > 0.1 ? (oldMx - this.x) / xRange : 0.5;
-
+      if (this.cpx === null || this.cpy === null) {
+        this.cpx = (this.x + this.x2) / 2;
+        this.cpy = this.y;
+      }
       [this.x,  this.y]  = rotatePt(this.x, this.y);
       [this.x2, this.y2] = rotatePt(this.x2, this.y2);
-
-      // Restore the relative bend in the new coordinate space.
-      const newXRange = this.x2 - this.x;
-      this.cpx = Math.abs(newXRange) > 0.1 ? this.x + frac * newXRange : null;
+      [this.cpx, this.cpy] = rotatePt(this.cpx, this.cpy);
 
     } else if (this.lineMode === 'curve') {
       // Materialise cpx before rotating so the control point follows correctly.
@@ -157,13 +153,61 @@ export class LineShape extends Shape {
       d = `M ${px1} ${py1} Q ${cpx} ${cpy} ${px2} ${py2}`;
 
     } else if (this.lineMode === 'elbow') {
-      const mx = this.cpx ?? (x1 + x2) / 2;
-      // Start segment is horizontal (x1,y1)→(mx,y1); end segment is horizontal (mx,y2)→(x2,y2)
-      uxS = Math.sign(mx - x1) || 1;  uyS = 0;
-      uxE = Math.sign(x2 - mx) || 1;  uyE = 0;
-      const sxS = x1 + uxS * sbS;
-      const sxE = x2 - uxE * sbE;
-      d = `M ${sxS} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${sxE} ${y2}`;
+      let j1x = this.cpx, j1y = this.cpy;
+      if (j1x === null || j1y === null) {
+        j1x = (x1 + x2) / 2;
+        j1y = y1;
+        this.cpx = j1x;
+        this.cpy = j1y;
+      }
+      const v1x = j1x - x1, v1y = j1y - y1;
+      const len1Sq = v1x * v1x + v1y * v1y;
+      const len1 = Math.sqrt(len1Sq);
+
+      let j2x = x2, j2y = y2;
+      let v3x = 0, v3y = 0;
+      let len3 = 0, len2 = 0;
+
+      if (len1Sq > 1e-6) {
+        const dp = (x2 - j1x) * v1x + (y2 - j1y) * v1y;
+        const k = dp / len1Sq;
+        j2x = x2 - k * v1x;
+        j2y = y2 - k * v1y;
+        
+        const v2x = j2x - j1x, v2y = j2y - j1y;
+        len2 = Math.hypot(v2x, v2y);
+
+        v3x = x2 - j2x;
+        v3y = y2 - j2y;
+        len3 = Math.hypot(v3x, v3y);
+      } else {
+        const dxL = x2 - x1, dyL = y2 - y1;
+        const len = Math.hypot(dxL, dyL) || 1;
+        uxS = dxL / len; uyS = dyL / len;
+        uxE = uxS; uyE = uyS;
+        const px1 = x1 + uxS * sbS, py1 = y1 + uyS * sbS;
+        const px2 = x2 - uxE * sbE, py2 = y2 - uyE * sbE;
+        d = `M ${px1} ${py1} L ${px2} ${py2}`;
+      }
+
+      if (len1Sq > 1e-6) {
+        uxS = v1x / len1;
+        uyS = v1y / len1;
+        if (len3 > 1e-4) {
+          uxE = v3x / len3;
+          uyE = v3y / len3;
+        } else if (len2 > 1e-4) {
+          uxE = (j2x - j1x) / len2;
+          uyE = (j2y - j1y) / len2;
+        } else {
+          uxE = uxS; 
+          uyE = uyS;
+        }
+
+        const px1 = x1 + uxS * sbS, py1 = y1 + uyS * sbS;
+        const px2 = x2 - uxE * sbE, py2 = y2 - uyE * sbE;
+        d = `M ${px1} ${py1} L ${j1x} ${j1y} L ${j2x} ${j2y} L ${px2} ${py2}`;
+      }
 
     } else {
       // Straight line
@@ -185,8 +229,9 @@ export class LineShape extends Shape {
 
     // Pass correct tangent direction to _renderCap via a synthetic "from" point:
     //   _renderCap computes direction = (tipX - fromX, tipY - fromY)
-    //   so set fromX = tipX - ux, fromY = tipY - uy  (unit vector away from tip)
-    this._renderCap(this._capS, x1, y1, x1 - uxS, y1 - uyS, this.arrowStart, true);
+    //   For the start cap, we want the tip to point outwards (away from the line),
+    //   so fromX should be a point inside the line: x1 + uxS.
+    this._renderCap(this._capS, x1, y1, x1 + uxS, y1 + uyS, this.arrowStart, true);
     this._renderCap(this._capE, x2, y2, x2 - uxE, y2 - uyE, this.arrowEnd, false);
   }
 
@@ -270,14 +315,23 @@ export class LineShape extends Shape {
     const { x: x1, y: y1, x2, y2 } = this;
 
     if (this.lineMode === 'elbow') {
-      // Include the bend column x-position in the bounding box
-      const mx = this.cpx ?? (x1 + x2) / 2;
-      const xs = [x1, x2, mx];
+      let j1x = this.cpx, j1y = this.cpy;
+      if (j1x === null || j1y === null) { j1x = (x1 + x2) / 2; j1y = y1; }
+      let j2x = x2, j2y = y2;
+      const v1x = j1x - x1, v1y = j1y - y1;
+      const v1Sq = v1x * v1x + v1y * v1y;
+      if (v1Sq > 1e-6) {
+        const k = ((x2 - j1x) * v1x + (y2 - j1y) * v1y) / v1Sq;
+        j2x = x2 - k * v1x;
+        j2y = y2 - k * v1y;
+      }
+      const xs = [x1, x2, j1x, j2x];
+      const ys = [y1, y2, j1y, j2y];
       return {
         x: Math.min(...xs),
-        y: Math.min(y1, y2),
+        y: Math.min(...ys),
         w: Math.max(...xs) - Math.min(...xs) || 1,
-        h: Math.max(y1, y2) - Math.min(y1, y2) || 1,
+        h: Math.max(...ys) - Math.min(...ys) || 1,
       };
     }
 
@@ -332,11 +386,19 @@ export class LineShape extends Shape {
     };
 
     if (this.lineMode === 'elbow') {
-      const mx = this.cpx ?? (x1 + x2) / 2;
-      // Hit-test all three segments of the elbow
-      return segDist(wx, wy, x1, y1, mx, y1) <= thr ||
-             segDist(wx, wy, mx, y1, mx, y2) <= thr ||
-             segDist(wx, wy, mx, y2, x2, y2) <= thr;
+      let j1x = this.cpx, j1y = this.cpy;
+      if (j1x === null || j1y === null) { j1x = (x1 + x2) / 2; j1y = y1; }
+      let j2x = x2, j2y = y2;
+      const v1x = j1x - x1, v1y = j1y - y1;
+      const v1Sq = v1x * v1x + v1y * v1y;
+      if (v1Sq > 1e-6) {
+        const k = ((x2 - j1x) * v1x + (y2 - j1y) * v1y) / v1Sq;
+        j2x = x2 - k * v1x;
+        j2y = y2 - k * v1y;
+      }
+      return segDist(wx, wy, x1, y1, j1x, j1y) <= thr ||
+             segDist(wx, wy, j1x, j1y, j2x, j2y) <= thr ||
+             segDist(wx, wy, j2x, j2y, x2, y2) <= thr;
     }
 
     if (this.lineMode === 'curve') {

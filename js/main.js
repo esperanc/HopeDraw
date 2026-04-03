@@ -72,6 +72,10 @@ const app = {
       stroke:      '#1a1a2e',
       strokeWidth: 2,
       opacity:     1,
+    },
+    line: {
+      arrowStart: 'none',
+      arrowEnd:   'none',
     }
     // shapeType: { ...overrides }
   },

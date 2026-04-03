@@ -24,7 +24,9 @@ export class LineTool {
     this._preview = new LineShape({
       x: wx, y: wy, x2: wx, y2: wy,
       stroke: d.stroke ?? '#1a1a2e', strokeWidth: d.strokeWidth ?? 2,
-      arrowEnd: 'filled',
+      arrowStart: d.arrowStart ?? 'none',
+      arrowEnd: d.arrowEnd ?? 'none',
+      lineMode: d.lineMode ?? 'straight',
       layerId: this.app.layers.getActiveLayer()?.id,
     });
     this._preview.mount(this.app.canvas.shapesLayer);

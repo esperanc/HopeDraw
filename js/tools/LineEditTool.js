@@ -80,55 +80,37 @@ export class LineEditTool {
       return el;
     };
 
-    // ── Curve: Bézier control point & tangent guide lines ─────────────────
-    if (s.lineMode === 'curve') {
-      const { cpx, cpy } = this._effectiveCp(s);
+    // ── Curve & Elbow: draggable control point ───────────────────────────
+    if (s.lineMode === 'curve' || s.lineMode === 'elbow') {
+      const { cpx, cpy } = s.lineMode === 'curve' ? this._effectiveCp(s) : {
+        cpx: s.cpx ?? (s.x + s.x2) / 2,
+        cpy: s.cpy ?? s.y
+      };
 
-      const l1 = mk('line', {
-        x1: s.x, y1: s.y, x2: cpx, y2: cpy,
-        stroke: 'rgba(108,99,255,0.5)', 'stroke-width': tsw,
-        'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
-      });
-      const l2 = mk('line', {
-        x1: s.x2, y1: s.y2, x2: cpx, y2: cpy,
-        stroke: 'rgba(108,99,255,0.5)', 'stroke-width': tsw,
-        'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
-      });
       const cp = mk('circle', {
         cx: cpx, cy: cpy, r: cpr,
         fill: '#6c63ff', stroke: '#fff', 'stroke-width': sw,
         cursor: 'move',
       });
       cp.dataset.handle = 'cp';
-      layer.appendChild(l1); layer.appendChild(l2); layer.appendChild(cp);
-      this._handleEls.push(l1, l2, cp);
-    }
+      layer.appendChild(cp);
+      this._handleEls.push(cp);
 
-    // ── Elbow: draggable bend-column handle ───────────────────────────────
-    if (s.lineMode === 'elbow') {
-      const mx = s.cpx ?? (s.x + s.x2) / 2;
-      const my = (s.y + s.y2) / 2;   // midpoint of the vertical segment
-
-      // Dashed vertical guide aligned with the bend column
-      const vline = mk('line', {
-        x1: mx, y1: s.y, x2: mx, y2: s.y2,
-        stroke: 'rgba(108,99,255,0.35)', 'stroke-width': tsw,
-        'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
-      });
-
-      // Diamond handle at the mid-point of the vertical segment
-      const sz  = hs * 0.9;
-      const pts = `${mx},${my - sz} ${mx + sz},${my} ${mx},${my + sz} ${mx - sz},${my}`;
-      const elbow = mk('polygon', {
-        points: pts,
-        fill: '#6c63ff', stroke: '#fff', 'stroke-width': sw,
-        cursor: 'ew-resize',
-      });
-      elbow.dataset.handle = 'elbow';
-
-      layer.appendChild(vline);
-      layer.appendChild(elbow);
-      this._handleEls.push(vline, elbow);
+      if (s.lineMode === 'curve') {
+        const l1 = mk('line', {
+          x1: s.x, y1: s.y, x2: cpx, y2: cpy,
+          stroke: 'rgba(108,99,255,0.5)', 'stroke-width': tsw,
+          'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
+        });
+        const l2 = mk('line', {
+          x1: s.x2, y1: s.y2, x2: cpx, y2: cpy,
+          stroke: 'rgba(108,99,255,0.5)', 'stroke-width': tsw,
+          'stroke-dasharray': `${3/z} ${2/z}`, 'pointer-events': 'none',
+        });
+        layer.insertBefore(l1, cp);
+        layer.insertBefore(l2, cp);
+        this._handleEls.push(l1, l2);
+      }
     }
 
     // ── Anchor squares (endpoints) ─────────────────────────────────────────
@@ -165,12 +147,14 @@ export class LineEditTool {
     // Lazily materialise cpx/cpy on first interaction with a control-point handle.
     // This mirrors the auto-computed position used by render() and _rebuild().
     if (handle === 'cp' && this._shape.cpx === null) {
-      const { cpx, cpy } = this._effectiveCp(this._shape);
-      this._shape.cpx = cpx;
-      this._shape.cpy = cpy;
-    }
-    if (handle === 'elbow' && this._shape.cpx === null) {
-      this._shape.cpx = (this._shape.x + this._shape.x2) / 2;
+      if (this._shape.lineMode === 'curve') {
+        const { cpx, cpy } = this._effectiveCp(this._shape);
+        this._shape.cpx = cpx;
+        this._shape.cpy = cpy;
+      } else {
+        this._shape.cpx = (this._shape.x + this._shape.x2) / 2;
+        this._shape.cpy = this._shape.y;
+      }
     }
 
     this._snapshot = this._shape.snapshotState();
@@ -202,9 +186,6 @@ export class LineEditTool {
     } else if (handle === 'cp') {
       this._shape.cpx = canvas.snap(snap.cpx + dx);
       this._shape.cpy = canvas.snap(snap.cpy + dy);
-    } else if (handle === 'elbow') {
-      // Horizontal only — cpx stores the x-position of the bend column
-      this._shape.cpx = canvas.snap(snap.cpx + dx);
     }
 
     this._shape.render();
