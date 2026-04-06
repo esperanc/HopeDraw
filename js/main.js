@@ -245,7 +245,6 @@ const app = {
       for (const item of arr) {
         delete item.id;
         delete item.childIds; // if group
-        delete item.nodes;    // path nodes will be natively reconstructed or should just be offset
         if (item.childShapes) {
           stripIds(item.childShapes);
         }
@@ -261,8 +260,9 @@ const app = {
         // Lines
         if (item.x2 !== undefined) item.x2 += dx;
         if (item.y2 !== undefined) item.y2 += dy;
-        if (item.cpx !== undefined) item.cpx += dx;
-        if (item.cpy !== undefined) item.cpy += dy;
+        // cpx/cpy can be explicit null to indicate runtime dynamic defaults (curves/elbows)
+        if (item.cpx != null) item.cpx += dx;
+        if (item.cpy != null) item.cpy += dy;
         // Paths
         // Note: the PathShape serialized state holds nodes, but they are nested. PathShape constructor handles 'nodes' explicitly natively
         // As a shortcut, the deserialize function reconstructs shapes, we can just deserialize them then call translate!
