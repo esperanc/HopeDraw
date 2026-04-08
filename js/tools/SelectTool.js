@@ -62,7 +62,7 @@ export class SelectTool {
     }
 
     // ── Normal handle / shape interaction ─────────────────────────────────────
-    const handle = app.selection.hitHandle(wx, wy);
+    const handle = app.selection.hitHandle(wx, wy, e);
 
     if (handle) {
       // Begin handle transform (do NOT reset _lastClick here — Phase 1 already
@@ -103,6 +103,7 @@ export class SelectTool {
       }
       this._state = 'moving';
       this._start = { wx, wy };
+      this._selBBox = { ...app.selection._selBBox };
       const shapes = app.selection.selectedShapes();
       this._snapshots = { before: new Map(shapes.map(s => [s.id, s.snapshotState()])) };
       app.canvas.svg.setPointerCapture?.(e.pointerId);
@@ -119,41 +120,21 @@ export class SelectTool {
   }
 
   onPointerMove(wx, wy, e) {
-    if (this._state === 'moving') {
-      const dx = wx - this._start.wx;
-      const dy = wy - this._start.wy;
-      app.selection.selectedShapes().forEach(s => {
-        const snap = this._snapshots.before.get(s.id);
-        if (!snap) return;
-        const tdx = snap.x !== undefined ? (snap.x + dx - s.x) : (snap.x1 + dx - s.x);
-        const tdy = snap.y !== undefined ? (snap.y + dy - s.y) : 0;
-        s.translate(tdx, tdy);
-      });
-      app.selection.refresh();
-    } else if (this._state === 'handle') {
-      this._applyHandle(wx, wy);
-      app.selection.refresh();
-    } else if (this._state === 'rubber') {
-      this._updateRubber(wx, wy);
-    }
-  }
-
-  onPointerMove(wx, wy, e) {
     const app = this.app;
     if (this._state === 'moving') {
       const canvas = app.canvas;
+      const bb = this._selBBox;
+      
+      const rawX = bb.x + (wx - this._start.wx);
+      const rawY = bb.y + (wy - this._start.wy);
+      const snappedX = canvas.snap(rawX);
+      const snappedY = canvas.snap(rawY);
+      const tdx = snappedX - bb.x;
+      const tdy = snappedY - bb.y;
       app.selection.selectedShapes().forEach(s => {
         const snap = this._snapshots.before.get(s.id);
         if (!snap) return;
         s.applyState(snap);
-        // Snap the shape's anchor position to the grid rather than the raw delta,
-        // so the shape's own origin lands on a grid line regardless of where it was grabbed.
-        const rawX = (snap.x  ?? snap.x1 ?? 0) + (wx - this._start.wx);
-        const rawY = (snap.y  ?? snap.y1 ?? 0) + (wy - this._start.wy);
-        const snappedX = canvas.snap(rawX);
-        const snappedY = canvas.snap(rawY);
-        const tdx = snappedX - (snap.x ?? snap.x1 ?? 0);
-        const tdy = snappedY - (snap.y ?? snap.y1 ?? 0);
         s.translate(tdx, tdy);
       });
       app.selection.refresh();

@@ -269,27 +269,11 @@ export class SelectionManager {
   }
 
 
-  /** Returns handle ID ('TL','T',...,'ROTATE') if client coords hit a handle, else null */
-  hitHandle(worldX, worldY) {
-    const hs = (HANDLE_SIZE / this.canvas.zoom) * 1.5; // a bit larger hit area
-    for (const el of this._handleEls) {
-      const hid = el.dataset?.handle;
-      if (!hid) continue;
-      if (hid === 'ROTATE') {
-        const cx = parseFloat(el.getAttribute('cx'));
-        const cy = parseFloat(el.getAttribute('cy'));
-        const r  = parseFloat(el.getAttribute('r')) * 1.5;
-        if (Math.hypot(worldX - cx, worldY - cy) <= r) return hid;
-      } else if (el.dataset.custom) {
-        const cx = parseFloat(el.getAttribute('cx'));
-        const cy = parseFloat(el.getAttribute('cy'));
-        const r  = parseFloat(el.getAttribute('r')) * 1.5;
-        if (Math.hypot(worldX - cx, worldY - cy) <= r) return hid;
-      } else {
-        const hx = parseFloat(el.getAttribute('x')) + parseFloat(el.getAttribute('width')) / 2;
-        const hy = parseFloat(el.getAttribute('y')) + parseFloat(el.getAttribute('height')) / 2;
-        if (Math.hypot(worldX - hx, worldY - hy) <= hs) return hid;
-      }
+  /** Returns handle ID ('TL','T',...,'ROTATE') if target is exactly on a handle, else null */
+  hitHandle(worldX, worldY, e) {
+    if (e?.target?.closest) {
+      const el = e.target.closest('[data-handle]');
+      if (el) return el.dataset.handle;
     }
     return null;
   }

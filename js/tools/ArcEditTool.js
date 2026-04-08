@@ -59,7 +59,7 @@ export class ArcEditTool {
   onPointerDown(wx, wy, e) {
     if (e.button !== 0) return;
 
-    const handle = this.app.selection.hitHandle(wx, wy);
+    const handle = this.app.selection.hitHandle(wx, wy, e);
 
     // Only react to the two custom arc handles
     if (handle === 'ARC_START' || handle === 'ARC_END') {

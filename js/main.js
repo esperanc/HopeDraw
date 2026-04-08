@@ -252,24 +252,6 @@ const app = {
     };
     stripIds(dataClones);
 
-    // Apply offset (+20, +20) down right
-    const offsetShapes = (arr, dx, dy) => {
-      for (const item of arr) {
-        if (item.x !== undefined) item.x += dx;
-        if (item.y !== undefined) item.y += dy;
-        // Lines
-        if (item.x2 !== undefined) item.x2 += dx;
-        if (item.y2 !== undefined) item.y2 += dy;
-        // cpx/cpy can be explicit null to indicate runtime dynamic defaults (curves/elbows)
-        if (item.cpx != null) item.cpx += dx;
-        if (item.cpy != null) item.cpy += dy;
-        // Paths
-        // Note: the PathShape serialized state holds nodes, but they are nested. PathShape constructor handles 'nodes' explicitly natively
-        // As a shortcut, the deserialize function reconstructs shapes, we can just deserialize them then call translate!
-      }
-    };
-    offsetShapes(dataClones, 20, 20);
-
     const activeLayerId = this.layers.getActiveLayer()?.id;
 
     // Deserialize into real HopeDraw shapes
@@ -284,7 +266,6 @@ const app = {
     if (!pastedShapes.length) return;
 
     // Apply offset post-deserialization since translate natively handles paths/groups geometrically, unlike pure JSON inspection
-    offsetShapes(dataClones, -20, -20); // undo generic offset on JSON if we didn't want it messing up paths
     pastedShapes.forEach(s => s.translate(20, 20));
 
     this.commands.execute(new AddShapesCommand(this, pastedShapes));

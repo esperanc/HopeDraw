@@ -15,13 +15,12 @@ import { Shape } from './Shape.js';
  */
 export class LineShape extends Shape {
   constructor(data = {}) {
-    // We must NOT pass `rotation` to super(), because Shape's constructor does:
-    //   this.rotation = data.rotation ?? 0
-    // If LineShape had a `set rotation` accessor on its prototype, that plain
-    // assignment in the base constructor would trigger the setter BEFORE x2/y2 are
-    // initialized, producing NaN.  So we strip rotation here and handle it ourselves.
     const { rotation: _savedRotation, ...rest } = data;
     super({ type: 'line', fill: 'none', ...rest });
+    
+    // rotation may be provided by deserialized data; otherwise 0.
+    // We use the backing field _rotation to avoid the setter re-rotating already-baked children.
+    this._rotation = data.rotation ?? 0;
     // At this point Shape.rotation is a plain own-property set to 0 (no setter was called).
 
     this.x2         = data.x2         ?? this.x + 100;
@@ -33,12 +32,9 @@ export class LineShape extends Shape {
     this.lineMode   = data.lineMode   ?? 'straight'; // 'straight'|'curve'|'elbow'
     this.arrowSize  = data.arrowSize  ?? 12;
 
-    // If a saved geometric rotation exists, apply it now that x2/y2 are ready.
-    if (_savedRotation) {
-      const cx = (this.x + this.x2) / 2;
-      const cy = (this.y + this.y2) / 2;
-      this.rotate(_savedRotation, cx, cy);
-    }
+    // Store the tracked rotation passively without applying it geometrically,
+    // since serialized coordinates are already baked in world-space.
+    this.rotation = _savedRotation ?? 0;
   }
 
   // ─── Geometry helpers ─────────────────────────────────────────────────────
