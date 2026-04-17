@@ -197,29 +197,69 @@ export class ProjectMenu {
   // ─── Actions ───────────────────────────────────────────────────────────────
 
   _doNewProject() {
-    const proceed = () => {
+    const create = () => {
       this._showInputModal('New Project', 'Untitled', (name) => {
-        this.app.projects.newProject(name);
+        const exists = this.app.projects.listProjects().includes(name);
+        if (exists) {
+          this._showConfirmModal(
+            'Project already exists',
+            `A project named "${name}" already exists. Overwrite it?`,
+            () => this.app.projects.newProject(name)
+          );
+        } else {
+          this.app.projects.newProject(name);
+        }
       });
     };
     if (this.app.projects.dirty) {
-      this._showConfirmModal('Unsaved changes', 'Discard unsaved changes?', proceed);
+      this._showConfirmModal('Unsaved changes', 'Discard unsaved changes?', create);
     } else {
-      proceed();
+      create();
     }
   }
 
   _doOpenProject() {
     const projects = this.app.projects.listProjects();
     if (!projects.length) { this._showAlertModal('Open Project', 'No saved projects.'); return; }
-    this._showModal('Open Project', `
-      <ul class="project-list">
-        ${projects.map(n => `<li><button class="project-item" data-name="${n}">${n}</button></li>`).join('')}
-      </ul>`, []);
+    this._showModal('Open Project', this._buildProjectListHTML(projects), []);
+    this._bindProjectListEvents();
+  }
+
+  _buildProjectListHTML(projects) {
+    return `<ul class="project-list">
+      ${projects.map(n => `
+        <li class="project-list-row">
+          <button class="project-item" data-name="${n}">${n}</button>
+          <button class="project-delete-btn" data-name="${n}" title="Delete project">🗑</button>
+        </li>`).join('')}
+    </ul>`;
+  }
+
+  _bindProjectListEvents() {
     document.querySelectorAll('.project-item').forEach(btn => {
       btn.addEventListener('click', () => {
         this.app.projects.load(btn.dataset.name);
         this._closeModal();
+      });
+    });
+    document.querySelectorAll('.project-delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const name = btn.dataset.name;
+        this._showConfirmModal(
+          'Delete Project',
+          `Delete "${name}"? This cannot be undone.`,
+          () => {
+            this.app.projects.deleteProject(name);
+            const remaining = this.app.projects.listProjects();
+            if (!remaining.length) {
+              this._closeModal();
+            } else {
+              document.getElementById('modal-body').innerHTML = this._buildProjectListHTML(remaining);
+              this._bindProjectListEvents();
+            }
+          }
+        );
       });
     });
   }
@@ -356,8 +396,8 @@ export class ProjectMenu {
 
     document.getElementById('modal-btn-ok').addEventListener('click', () => {
       const val = document.getElementById(inputId).value.trim();
-      if (val) onConfirm(val);
       this._closeModal();
+      if (val) onConfirm(val);
     });
     document.getElementById('modal-btn-cancel').addEventListener('click', () => this._closeModal());
   }

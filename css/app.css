@@ -993,8 +993,18 @@ body {
   gap: 6px;
 }
 
+.project-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-list-row:hover .project-delete-btn {
+  opacity: 1;
+}
+
 .project-item {
-  width: 100%;
+  flex: 1;
   background: var(--glass);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -1004,11 +1014,39 @@ body {
   font-size: 14px;
   text-align: left;
   transition: all var(--anim);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-item:hover {
   background: var(--accent-dim);
   border-color: var(--accent);
+}
+
+.project-delete-btn {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all var(--anim);
+}
+
+.project-delete-btn:hover {
+  background: rgba(220, 60, 60, 0.15);
+  border-color: rgba(220, 60, 60, 0.4);
+  color: #e05555;
+  opacity: 1;
 }
 
 /* ─── Formula Editor ────────────────────────────────── */
