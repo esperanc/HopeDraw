@@ -42,6 +42,10 @@ export class PropertiesPanel {
           ${proj.pageBgColor === 'transparent' ? '<div class="color-swatch-none"></div>' : ''}
         </div>
       </div>
+      <div class="prop-row prop-checkbox" style="display: flex; align-items: center; gap: 8px; margin-top: 6px;" title="Embed Math Fonts in Exported SVG">
+        <label>Embed Math Fonts</label>
+        <input type="checkbox" id="page-prop-embed-fonts" data-page-prop="embedMathFonts" ${proj.embedMathFonts ? 'checked' : ''}>
+      </div>
     </div>`;
     this.elPage.innerHTML = html;
     this._bindPageEvents();
@@ -54,6 +58,7 @@ export class PropertiesPanel {
         if (!prop) return;
         let val = inp.value;
         if (inp.type === 'number') val = parseInt(val, 10) || 0;
+        else if (inp.type === 'checkbox') val = inp.checked;
         this.app.projects[prop] = val;
         this.app.projects.applyPageProperties();
         this.app.projects.markDirty();

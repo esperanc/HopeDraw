@@ -1,4 +1,5 @@
 import { Events } from './Events.js';
+import { FormulaShape } from '../shapes/FormulaShape.js';
 
 const STORAGE_KEY = 'hopedraw_projects';
 const CURRENT_KEY = 'hopedraw_current';
@@ -12,6 +13,7 @@ export class ProjectManager {
     this.pageWidth = 800;
     this.pageHeight = 600;
     this.pageBgColor = '#ffffff';
+    this.embedMathFonts = true;
   }
 
   get currentName() { return this._currentName; }
@@ -103,6 +105,7 @@ export class ProjectManager {
     this.pageWidth = 800;
     this.pageHeight = 600;
     this.pageBgColor = '#ffffff';
+    this.embedMathFonts = true;
     this.applyPageProperties();
     this.bus.emit(Events.PROJECT_NEW, { name });
   }
@@ -136,17 +139,17 @@ export class ProjectManager {
     try {
       const shapesLayer = this.app.canvas.shapesLayer;
 
-      // ── Rasterize formula and multi-line text shapes ──────────────────────
-      // To ensure formulas and HTML-based text are portable in the exported SVG, 
-      // we convert them to high-resolution PNG images. This avoids issues with 
-      // missing fonts, scrollbars, or unsupported <foreignObject>.
+      // ── Rasterize multi-line text shapes ──────────────────────────────────
+      // To ensure HTML-based text is portable in the exported SVG, 
+      // we convert them to high-resolution PNG images. 
+      // Formulas are left as <foreignObject> but we'll inject their CSS once globally.
       const swaps = [];
       for (const [, shape] of this.app.shapes) {
-        if ((shape.type !== 'formula' && shape.type !== 'text') || !shape.el) continue;
+        if (shape.type !== 'text' || !shape.el) continue;
         const fo = shape.el.querySelector('foreignObject');
         if (!fo) continue;
 
-        const dataUrl = await shape.rasterise();
+        const dataUrl = await shape.rasterise({ embedFonts: this.embedMathFonts });
         if (dataUrl) {
           const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
           img.setAttribute('x',      fo.getAttribute('x'));
@@ -180,6 +183,14 @@ export class ProjectManager {
       // Strip KaTeX mathml for browsers that don't need it
       shapesStr = shapesStr.replace(/<span[^>]*class="[^"]*katex-mathml[^"]*"[\s\S]*?<\/span>/g, '');
 
+      // ── Collect Global Formula CSS ───────────────────────────────────────
+      let formulaDefs = '';
+      const hasFormulas = Array.from(this.app.shapes.values()).some(s => s.type === 'formula');
+      if (hasFormulas) {
+        const cssText = await FormulaShape._collectCSS(this.embedMathFonts);
+        formulaDefs = `<style><![CDATA[${cssText}]]></style>`;
+      }
+
       // ── Determine ViewBox ────────────────────────────────────────────────
       // We want to export the entire page area (0,0,W,H) PLUS any shapes 
       // that might be outside this boundary.
@@ -203,6 +214,9 @@ export class ProjectManager {
       ${JSON.stringify(this._serialize(this._currentName)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
     </hopedraw:project>
   </metadata>
+  <defs>
+    ${formulaDefs}
+  </defs>
   ${this.pageBgColor !== 'transparent' ? `<rect x="0" y="0" width="${this.pageWidth}" height="${this.pageHeight}" fill="${this.pageBgColor}"/>` : ''}
   ${shapesStr}
 </svg>`;
@@ -246,6 +260,7 @@ export class ProjectManager {
       pageWidth: this.pageWidth,
       pageHeight: this.pageHeight,
       pageBgColor: this.pageBgColor,
+      embedMathFonts: this.embedMathFonts,
       defaultProps: this.app.defaultProps,
       layers: this.app.layers.serialize(),
       shapes: [...this.app.shapes.values()].map(s => s.serialize()),
@@ -259,6 +274,7 @@ export class ProjectManager {
     this.pageWidth = data.pageWidth ?? 800;
     this.pageHeight = data.pageHeight ?? 600;
     this.pageBgColor = data.pageBgColor ?? '#ffffff';
+    this.embedMathFonts = data.embedMathFonts ?? true;
     this.applyPageProperties();
 
     if (data.defaultProps) {
