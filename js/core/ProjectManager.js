@@ -228,6 +228,58 @@ export class ProjectManager {
     }
   }
 
+  /** Export scene as PDF using the browser's native print functionality */
+  exportPDF() {
+    let styleEl = document.getElementById('print-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'print-style';
+      document.head.appendChild(styleEl);
+    }
+    
+    styleEl.innerHTML = `
+      @media print {
+        @page { 
+          size: ${this.pageWidth}px ${this.pageHeight}px; 
+          margin: 0; 
+        }
+        body { 
+          background: transparent !important; 
+          margin: 0 !important; 
+          padding: 0 !important; 
+        }
+        #menu-bar, #toolbar, #right-panel, #canvas-status-bar, 
+        .grid-visible, #handles-layer, #dropdown-menu, #modal-overlay, 
+        #formula-editor, #context-menu, .export-ignore { 
+          display: none !important; 
+        }
+        #app, #workspace, #canvas-area, #canvas-container { 
+          display: block !important; 
+          position: static !important;
+          width: 100% !important; 
+          height: auto !important; 
+          overflow: visible !important; 
+          background: transparent !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        #main-canvas {
+          width: ${this.pageWidth}px !important;
+          height: ${this.pageHeight}px !important;
+          display: block !important;
+        }
+        #canvas-root { 
+          transform: none !important; 
+        }
+        #page-bg {
+          stroke: none !important;
+        }
+      }
+    `;
+    
+    window.print();
+  }
+
 
 
   /** Import SVG: reads HopeDraw metadata if present, else parses basic shapes */

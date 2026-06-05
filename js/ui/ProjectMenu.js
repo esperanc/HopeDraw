@@ -121,6 +121,7 @@ export class ProjectMenu {
         { label: 'Rename…',       action: 'file-rename' },
         '---',
         { label: 'Export SVG',    action: 'file-export-svg', shortcut: 'Ctrl+E' },
+        { label: 'Export PDF',    action: 'file-export-pdf' },
         { label: 'Import SVG…',   action: 'file-import-svg' },
       ];
       case 'edit': return [
@@ -171,6 +172,7 @@ export class ProjectMenu {
       case 'file-save-as':    this._doSaveAs(); break;
       case 'file-rename':     this._doRename(); break;
       case 'file-export-svg': app.projects.exportSVG(); break;
+      case 'file-export-pdf': app.projects.exportPDF(); break;
       case 'file-import-svg': this._doImportSVG(); break;
       case 'edit-undo':       app.commands.undo(); break;
       case 'edit-redo':       app.commands.redo(); break;
