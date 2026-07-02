@@ -73,6 +73,25 @@ export class CanvasManager {
 
   zoomTo(z) { this.zoomBy(z / this.zoom); }
 
+  /**
+   * Zoom by `factor` while keeping a focus point pinned on screen. When
+   * focusWorld is given (e.g. a selected shape's centre) that world point stays
+   * put; otherwise the centre of the viewport stays put. Used by the zoom
+   * buttons, which have no cursor position to zoom toward.
+   */
+  zoomByFocus(factor, focusWorld = null) {
+    const rect = this.svg.getBoundingClientRect();
+    let clientX, clientY;
+    if (focusWorld) {
+      const p = this.worldToClient(focusWorld.x, focusWorld.y);
+      clientX = p.x; clientY = p.y;
+    } else {
+      clientX = rect.left + rect.width / 2;
+      clientY = rect.top + rect.height / 2;
+    }
+    this.zoomBy(factor, clientX, clientY);
+  }
+
   resetView() {
     this.zoom = 1; this.panX = 0; this.panY = 0;
     this._updateTransform();

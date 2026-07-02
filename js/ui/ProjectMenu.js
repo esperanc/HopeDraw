@@ -33,11 +33,31 @@ export class ProjectMenu {
     if (el) el.textContent = name ?? 'Untitled';
   }
 
+  /**
+   * Zoom via the buttons/menu, keeping a fixed point on screen: the centre of
+   * the selected shape(s) if there is a selection, otherwise the viewport centre.
+   */
+  _zoomCentered(factor) {
+    const sel = this.app.selection.selectedShapes();
+    let focus = null;
+    if (sel.length) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      sel.forEach(s => {
+        const bb = s.getBBox?.();
+        if (!bb) return;
+        minX = Math.min(minX, bb.x);        minY = Math.min(minY, bb.y);
+        maxX = Math.max(maxX, bb.x + bb.w);  maxY = Math.max(maxY, bb.y + bb.h);
+      });
+      if (isFinite(minX)) focus = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+    }
+    this.app.canvas.zoomByFocus(factor, focus);
+  }
+
   _bindTopBar() {
     document.getElementById('btn-undo')?.addEventListener('click', () => this.app.commands.undo());
     document.getElementById('btn-redo')?.addEventListener('click', () => this.app.commands.redo());
-    document.getElementById('btn-zoom-in')?.addEventListener('click',  () => this.app.canvas.zoomBy(1.2));
-    document.getElementById('btn-zoom-out')?.addEventListener('click', () => this.app.canvas.zoomBy(1/1.2));
+    document.getElementById('btn-zoom-in')?.addEventListener('click',  () => this._zoomCentered(1.2));
+    document.getElementById('btn-zoom-out')?.addEventListener('click', () => this._zoomCentered(1/1.2));
 
     // Support cross-instance paste button enabling
     window.addEventListener('storage', (e) => {
@@ -183,8 +203,8 @@ export class ProjectMenu {
       case 'edit-delete':     this._doDelete(); break;
       case 'edit-group':      this._doGroup(); break;
       case 'edit-ungroup':    this._doUngroup(); break;
-      case 'view-zoom-in':    app.canvas.zoomBy(1.2); break;
-      case 'view-zoom-out':   app.canvas.zoomBy(1/1.2); break;
+      case 'view-zoom-in':    this._zoomCentered(1.2); break;
+      case 'view-zoom-out':   this._zoomCentered(1/1.2); break;
       case 'view-zoom-reset': app.canvas.resetView(); break;
       case 'view-fit':        app.canvas.resetView(); break;
       case 'view-grid':       app.canvas.toggleGrid(); break;
