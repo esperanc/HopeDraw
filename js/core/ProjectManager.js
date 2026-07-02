@@ -102,6 +102,9 @@ export class ProjectManager {
     this.app.commands.clear();
     this._currentName = name;
     this._dirty = false;
+    // Revert tool configuration to factory defaults so a new project does
+    // not inherit the previously loaded project's settings.
+    this.app.defaultProps = this.app.factoryDefaultProps();
     this.pageWidth = 800;
     this.pageHeight = 600;
     this.pageBgColor = '#ffffff';
@@ -332,10 +335,8 @@ export class ProjectManager {
     if (data.defaultProps) {
       this.app.defaultProps = data.defaultProps;
     } else {
-      // Reset to initial app defaults if missing from save data
-      this.app.defaultProps = {
-        base: { fill: '#4a9eff', stroke: '#1a1a2e', strokeWidth: 2, opacity: 1 }
-      };
+      // Reset to factory defaults if missing from save data
+      this.app.defaultProps = this.app.factoryDefaultProps();
     }
 
     this.app.layers.deserialize(data.layers ?? []);

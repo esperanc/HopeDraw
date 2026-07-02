@@ -52,6 +52,7 @@ export class TextTool {
     this._preview.width  = w;
     this._preview.height = h;
     this._preview.content = '<p>Text</p>';
+    this._preview.isPlaceholder = true;
     this._preview.render();
 
     const shape = this._preview;
@@ -62,7 +63,7 @@ export class TextTool {
     this.app.setActiveTool('select');
     // Auto enter edit mode
     setTimeout(() => {
-      shape.enterEditMode();
+      shape.enterEditMode(() => this.app.selection.refresh());
       const handler = (ev) => {
         if (!shape.el?.contains(ev.target)) {
           shape.exitEditMode();

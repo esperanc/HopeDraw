@@ -52,6 +52,6 @@ export class LineTool {
     this._preview = null;
     this.app.commands.execute(new AddShapeCommand(this.app, shape));
     this.app.selection.select(shape.id);
-    this.app.setActiveTool('select');
+    this.app.finishCreation();
   }
 }

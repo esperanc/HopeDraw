@@ -11,6 +11,7 @@ export class PropertiesPanel {
     app.bus.on(Events.SELECTION_CHANGED, () => this.refresh());
     app.bus.on(Events.PROJECT_LOADED,    () => this.refresh());
     app.bus.on(Events.PROJECT_NEW,       () => this.refresh());
+    app.bus.on(Events.TOOL_CHANGED,      () => this.refresh());
   }
 
   refresh() {
@@ -94,6 +95,10 @@ export class PropertiesPanel {
   // ─── Shape Properties (selection-dependent) ───────────────────────────────
 
   _renderShapeSection() {
+    // While the freehand tool is active, the panel shows brush settings
+    // regardless of selection (you configure the brush, not a shape).
+    if (this.app._activeToolName === 'freehand') { this._renderBrushSection(); return; }
+
     const shapes = this.app.selection.selectedShapes();
     if (!shapes.length) {
       this.elShape.innerHTML = `<p class="no-selection-msg">Select a shape to edit its properties</p>`;
@@ -280,6 +285,54 @@ export class PropertiesPanel {
     if (efBtn) efBtn.addEventListener('click', () => this.app.openFormulaEditor(s));
   }
 
+  // ─── Freehand Brush (shown while the freehand tool is active) ──────────────
+
+  _renderBrushSection() {
+    const b = this.app.defaultProps.freehand || {};
+    let html = `<div class="prop-section">
+      <div class="prop-section-title">Brush</div>`;
+    html += this._colorRow('Color', 'stroke', b.stroke ?? '#1a1a2e');
+    html += this._numRow('Width', 'strokeWidth', b.strokeWidth ?? 3, 0.5, 40, 0.5);
+    html += `</div><div class="prop-section">
+      <div class="prop-section-title">Smoothing (1€ filter)</div>`;
+    // Lower min-cutoff → smoother but laggier at low speed.
+    html += this._rangeRow('Smoothing', 'minCutoff', b.minCutoff ?? 1.5, 0.2, 5, 0.1);
+    // Higher beta → snappier at high speed (less lag on fast strokes).
+    html += this._rangeRow('Speed react', 'beta', b.beta ?? 0.02, 0, 0.2, 0.005);
+    // Turns sharper than this angle are kept as crisp corners (not rounded).
+    html += this._rangeRow('Keep corners ≥', 'cornerAngle', b.cornerAngle ?? 30, 5, 90, 1);
+    html += `</div>`;
+    this.elShape.innerHTML = html;
+    this._bindBrushEvents();
+  }
+
+  _bindBrushEvents() {
+    // Color swatch → default brush stroke.
+    const swatch = this.elShape.querySelector('.color-swatch');
+    if (swatch) {
+      swatch.addEventListener('click', () => {
+        const init = this.app.defaultProps.freehand?.stroke ?? '#1a1a2e';
+        new ColorPicker(swatch, init, (newColor) => {
+          this.app.setDefaultProp('freehand', 'stroke', newColor);
+          const inner = swatch.querySelector('.color-swatch-inner');
+          if (inner) inner.style.backgroundColor = newColor;
+        });
+      });
+    }
+    // Number / range inputs → default brush params.
+    this.elShape.querySelectorAll('input[type=number], input[type=range]').forEach(inp => {
+      inp.addEventListener('focus', () => this._editing = true);
+      inp.addEventListener('blur',  () => { this._editing = false; });
+      inp.addEventListener('input', () => {
+        const v = parseFloat(inp.value);
+        if (isNaN(v)) return;
+        this.app.setDefaultProp('freehand', inp.dataset.prop, v);
+        const out = inp.parentElement.querySelector('.range-val');
+        if (out) out.textContent = v;
+      });
+    });
+  }
+
   // ─── Row Helpers ──────────────────────────────────────────────────────────
 
   _colorRow(label, prop, value) {
@@ -302,6 +355,14 @@ export class PropertiesPanel {
       <label>${label}</label>
       <input type="number" data-prop="${prop}" value="${value}" min="${min}" max="${max}" step="${step}">
       ${suffix ? `<span class="prop-suffix">${suffix}</span>` : ''}
+    </div>`;
+  }
+
+  _rangeRow(label, prop, value, min, max, step) {
+    return `<div class="prop-row">
+      <label>${label}</label>
+      <input type="range" data-prop="${prop}" value="${value}" min="${min}" max="${max}" step="${step}">
+      <span class="prop-suffix range-val">${value}</span>
     </div>`;
   }
 

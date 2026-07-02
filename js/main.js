@@ -27,6 +27,7 @@ import { TextTool }         from './tools/TextTool.js';
 import { FormulaTool }      from './tools/FormulaTool.js';
 import { HandTool }         from './tools/HandTool.js';
 import { PathTool }         from './tools/PathTool.js';
+import { FreehandTool }     from './tools/FreehandTool.js';
 import { PathEditTool }     from './tools/PathEditTool.js';
 import { LineEditTool }     from './tools/LineEditTool.js';
 import { ArcEditTool }      from './tools/ArcEditTool.js';
@@ -49,6 +50,7 @@ const app = {
   tools:    {},
   _activeTool: null,
   _activeToolName: null,
+  _stickyToolName: null,   // tool that stays active after each shape (double-click)
   _clipboard: [],
 
   /** Shape registry for deserialization */
@@ -66,18 +68,33 @@ const app = {
 
 
   /** Default fill/stroke props applied to new shapes */
-  defaultProps: {
-    base: {
-      fill:        '#4a9eff',
-      stroke:      '#1a1a2e',
-      strokeWidth: 2,
-      opacity:     1,
-    },
-    line: {
-      arrowStart: 'none',
-      arrowEnd:   'none',
-    }
-    // shapeType: { ...overrides }
+  defaultProps: null, // initialized below from factoryDefaultProps()
+
+  /** Fresh copy of the factory tool defaults (single source of truth) */
+  factoryDefaultProps() {
+    return {
+      base: {
+        fill:        '#4a9eff',
+        stroke:      '#1a1a2e',
+        strokeWidth: 2,
+        opacity:     1,
+      },
+      line: {
+        arrowStart: 'none',
+        arrowEnd:   'none',
+      },
+      text: {
+        textColor: '#000000',
+      },
+      freehand: {
+        stroke:      '#1a1a2e',
+        strokeWidth: 3,
+        minCutoff:   1.5,   // 1€ filter: lower = smoother (more lag at low speed)
+        beta:        0.02,  // 1€ filter: higher = snappier at high speed
+        cornerAngle: 30,    // turns sharper than this stay crisp corners
+      }
+      // shapeType: { ...overrides }
+    };
   },
 
   /** Get merged default properties for a specific shape type */
@@ -106,13 +123,38 @@ const app = {
     if (!tool) return;
     this._activeTool = tool;
     this._activeToolName = name;
+    // Switching to any tool other than the sticky one drops stickiness.
+    if (name !== this._stickyToolName) this._stickyToolName = null;
     this.canvas.setActiveTool(tool);
     if (tool.activate) tool.activate();
     // Update toolbar UI
     document.querySelectorAll('.tool-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tool === name);
+      btn.classList.toggle('sticky', btn.dataset.tool === this._stickyToolName);
     });
     this.bus.emit(Events.TOOL_CHANGED, { name });
+  },
+
+  /** Make a tool "sticky": it stays active after each shape is created. */
+  setStickyTool(name) {
+    if (!this.tools[name]) return;
+    this.setActiveTool(name, true);   // activate (this clears _stickyToolName)
+    this._stickyToolName = name;
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.classList.toggle('sticky', btn.dataset.tool === name);
+    });
+  },
+
+  /**
+   * Called by creation tools once they finish making a shape. Stays on the
+   * same tool when it is sticky, otherwise reverts to the select tool.
+   */
+  finishCreation() {
+    if (this._activeToolName === this._stickyToolName) {
+      this.setActiveTool(this._activeToolName); // stay for the next shape
+    } else {
+      this.setActiveTool('select');
+    }
   },
 
   /** Open the LaTeX formula editor for a FormulaShape */
@@ -278,6 +320,7 @@ const app = {
 function init() {
   const svgEl = document.getElementById('main-canvas');
 
+  app.defaultProps = app.factoryDefaultProps();
   app.commands  = new CommandManager(app.bus);
   app.layers    = new LayerManager(app.bus);
   app.canvas    = new CanvasManager(app.bus, svgEl);
@@ -301,6 +344,7 @@ function init() {
     formula:        new FormulaTool(app),
     hand:           new HandTool(app),
     pen:            new PathTool(app),
+    freehand:       new FreehandTool(app),
     'path-edit':    new PathEditTool(app),
     'line-edit':    new LineEditTool(app),
     'arc-edit':     new ArcEditTool(app),
@@ -315,6 +359,8 @@ function init() {
   // Toolbar button bindings
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => app.setActiveTool(btn.dataset.tool, true));
+    // Double-click makes a drawing tool sticky (stays active after each shape).
+    btn.addEventListener('dblclick', () => app.setStickyTool(btn.dataset.tool));
   });
 
   // Activate default tool

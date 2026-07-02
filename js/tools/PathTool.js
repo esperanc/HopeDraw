@@ -69,10 +69,16 @@ export class PathTool {
       }
     }
 
-    // Add a new sharp anchor; handles will be pulled out during drag
-    const node = { x: wx, y: wy, cInX: null, cInY: null, cOutX: null, cOutY: null, smooth: true };
+    // Add a new anchor. It starts sharp; dragging just after this click is
+    // what marks it smooth (see onPointerMove). Handle geometry is derived
+    // from the neighbouring anchors, not from the drag vector.
+    const node = { x: wx, y: wy, cInX: null, cInY: null, cOutX: null, cOutY: null, smooth: false };
     this._shape.nodes.push(node);
-    this._dragIdx   = this._shape.nodes.length - 1;
+    const newIdx = this._shape.nodes.length - 1;
+    // The anchor placed just before this one now has a concrete "next" point,
+    // so finalise its handles against the real neighbour instead of the cursor.
+    if (newIdx > 0) this._applySmoothHandles(newIdx - 1);
+    this._dragIdx   = newIdx;
     this._dragStart = { wx, wy };
     this._dragging  = true;
     this._shape.render();
@@ -84,22 +90,86 @@ export class PathTool {
     wx = this.app.canvas.snap(wx);
     wy = this.app.canvas.snap(wy);
 
-    // If the user is dragging after placing a node, pull out Bézier handles
+    // Dragging just after placing an anchor marks it as smooth.
     if (this._dragging && this._dragIdx !== null) {
-      const node = this._shape.nodes[this._dragIdx];
-      const dx   = wx - this._dragStart.wx;
-      const dy   = wy - this._dragStart.wy;
+      const dx = wx - this._dragStart.wx;
+      const dy = wy - this._dragStart.wy;
       if (Math.hypot(dx, dy) > 4 / this.app.canvas.zoom) {
-        // Symmetric outgoing / incoming handles
-        node.cOutX = node.x + dx;
-        node.cOutY = node.y + dy;
-        node.cInX  = node.x - dx;
-        node.cInY  = node.y - dy;
-        this._shape.render();
+        this._shape.nodes[this._dragIdx].smooth = true;
       }
     }
 
+    // The last anchor's "next" point is wherever the cursor is now, so its
+    // handles (a = cIn and b = cOut) must be recomputed on every move.
+    const lastIdx = this._shape ? this._shape.nodes.length - 1 : -1;
+    if (lastIdx >= 0 && this._shape.nodes[lastIdx].smooth) {
+      this._applySmoothHandles(lastIdx, { x: wx, y: wy });
+      this._shape.render();
+    }
+
     this._updatePreview(wx, wy);
+  }
+
+  /**
+   * Recompute the Bézier handles of a smooth anchor from its neighbours.
+   *
+   * For anchor q with previous anchor p and next point r:
+   *   tangent  t   = normalize(r − p)              (a, q, b are co-linear)
+   *   cIn (a)      = q − ½·|q − p| · t
+   *   cOut (b)     = q + ½·|r − q| · t
+   *
+   * Endpoints of an open path have a single neighbour and get a one-sided
+   * handle; a closed path wraps around so every anchor is interior.
+   *
+   * @param idx        index of the anchor to update
+   * @param nextOverride optional {x,y} to use as r (the live cursor position)
+   */
+  _applySmoothHandles(idx, nextOverride = null) {
+    const n = this._shape.nodes;
+    const q = n[idx];
+    if (!q || !q.smooth) return;
+    const total = n.length;
+    const closed = this._shape.closed;
+
+    const prev = idx > 0        ? n[idx - 1] : (closed ? n[total - 1] : null);
+    const next = nextOverride ?? (idx < total - 1 ? n[idx + 1] : (closed ? n[0] : null));
+
+    const clear = () => { q.cInX = q.cInY = q.cOutX = q.cOutY = null; };
+
+    if (prev && next) {
+      let tx = next.x - prev.x, ty = next.y - prev.y;
+      const tl = Math.hypot(tx, ty);
+      if (tl < 1e-6) { clear(); return; }
+      tx /= tl; ty /= tl;
+      const dIn  = 0.5 * Math.hypot(q.x - prev.x, q.y - prev.y);
+      const dOut = 0.5 * Math.hypot(next.x - q.x, next.y - q.y);
+      q.cInX  = q.x - tx * dIn;  q.cInY  = q.y - ty * dIn;
+      q.cOutX = q.x + tx * dOut; q.cOutY = q.y + ty * dOut;
+    } else if (next) {
+      // First anchor of an open path: only an outgoing handle toward next.
+      let tx = next.x - q.x, ty = next.y - q.y;
+      const tl = Math.hypot(tx, ty);
+      if (tl < 1e-6) { clear(); return; }
+      const dOut = 0.5 * tl;
+      q.cOutX = q.x + (tx / tl) * dOut; q.cOutY = q.y + (ty / tl) * dOut;
+      q.cInX = null; q.cInY = null;
+    } else if (prev) {
+      // Last anchor of a finished open path: only an incoming handle.
+      let tx = q.x - prev.x, ty = q.y - prev.y;
+      const tl = Math.hypot(tx, ty);
+      if (tl < 1e-6) { clear(); return; }
+      const dIn = 0.5 * tl;
+      q.cInX = q.x - (tx / tl) * dIn; q.cInY = q.y - (ty / tl) * dIn;
+      q.cOutX = null; q.cOutY = null;
+    } else {
+      clear();
+    }
+  }
+
+  /** Recompute every smooth anchor against its real neighbours before commit. */
+  _finalizeSmoothHandles() {
+    const n = this._shape.nodes;
+    for (let i = 0; i < n.length; i++) this._applySmoothHandles(i);
   }
 
   onPointerUp(wx, wy, e) {
@@ -188,13 +258,14 @@ export class PathTool {
     if (!this._shape) return;
     if (this._shape.nodes.length < 2) { this._cancelPath(); return; }
 
+    this._finalizeSmoothHandles();
     const shape = this._shape;
     this._reset();
     shape.recomputeBBox(); // MUST compute initial unrotated bounding box before mounting
     shape.unmount();
     this.app.commands.execute(new AddShapeCommand(this.app, shape));
     this.app.selection.select(shape.id);
-    this.app.setActiveTool('select');
+    this.app.finishCreation();
   }
 
   _cancelPath() {

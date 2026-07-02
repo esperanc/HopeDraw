@@ -18,6 +18,9 @@ export class TextShape extends Shape {
     this.bgFill     = data.bgFill     ?? 'transparent';
     this.borderColor = data.borderColor ?? 'transparent';
     this.editing    = false;
+    // True while the shape still shows its auto-generated placeholder text,
+    // so the first keystroke can wipe it instead of appending to it.
+    this.isPlaceholder = data.isPlaceholder ?? false;
   }
 
   createElements(g) {
@@ -62,33 +65,97 @@ export class TextShape extends Shape {
       height:         '100%',
       boxSizing:      'border-box',
       padding:        '6px 8px',
-      wordBreak:      'break-word',
-      whiteSpace:     'pre-wrap',
+      wordBreak:      'normal',
+      // 'pre' means the text never auto-wraps: the box shrink-wraps to the
+      // longest line and new lines only come from Enter. This also avoids the
+      // scrollbar/word-break cascade that would force-wrap tight-fit text.
+      whiteSpace:     'pre',
       outline:        'none',
-      overflow:       'auto',
+      overflow:       'hidden',
       userSelect:     this.editing ? 'text' : 'none',
       cursor:         this.editing ? 'text' : 'default',
     });
   }
 
-  enterEditMode() {
+  /**
+   * Enter inline edit mode.
+   * @param onChange optional callback fired after each edit (e.g. to refresh
+   *                 selection handles as the auto-fitting box changes size).
+   */
+  enterEditMode(onChange) {
     this.editing = true;
     this._div.contentEditable = 'true';
     this.render();
     this._div.focus();
-    // Place cursor at end
+
     const range = document.createRange();
-    range.selectNodeContents(this._div);
-    range.collapse(false);
     const sel = window.getSelection();
+    if (this.isPlaceholder) {
+      // Select the whole placeholder so the first keystroke replaces it.
+      range.selectNodeContents(this._div);
+    } else {
+      // Place cursor at end.
+      range.selectNodeContents(this._div);
+      range.collapse(false);
+    }
     sel.removeAllRanges();
     sel.addRange(range);
+
+    // Wipe the placeholder and keep the box tightly fitted while typing.
+    this._onInput = () => {
+      this.isPlaceholder = false;
+      this.autoFit();
+      onChange?.();
+    };
+    this._div.addEventListener('input', this._onInput);
   }
 
   exitEditMode() {
+    if (this._onInput) {
+      this._div.removeEventListener('input', this._onInput);
+      this._onInput = null;
+    }
     this.editing = false;
     this.content = this._div.innerHTML;
     this._div.contentEditable = 'false';
+    this.render();
+  }
+
+  /**
+   * Resize the bounding box to hug the current text content: width follows the
+   * widest line (no wrapping), height follows the number of lines. The anchor
+   * (top-left) stays put; the box grows/shrinks right and down.
+   */
+  autoFit() {
+    const div = this._div, fo = this._fo;
+    if (!div || !fo) return;
+    const MIN_W = 24, MIN_H = 24;
+
+    // Measure on an off-screen clone. Measuring the live element is unreliable
+    // because it lives inside an <foreignObject>, whose fixed width distorts
+    // intrinsic (max-content) sizing. The clone carries the same class and
+    // inline styles, so font, line-height and padding all match the real box.
+    const m = div.cloneNode(true);
+    m.style.cssText = div.style.cssText;
+    Object.assign(m.style, {
+      position: 'absolute', left: '-99999px', top: '0', visibility: 'hidden',
+      // inline-block shrink-wraps to the content instead of filling the parent.
+      display: 'inline-block',
+      width: 'auto', height: 'auto', maxWidth: 'none', maxHeight: 'none',
+      overflow: 'visible', whiteSpace: 'pre',   // no wrapping → widest line
+    });
+    document.body.appendChild(m);
+    // offsetWidth/Height are border-box (include the padding), matching the
+    // real box which also uses border-box + white-space: pre.
+    const w = m.offsetWidth;
+    const h = m.offsetHeight;
+    document.body.removeChild(m);
+
+    this.width  = Math.max(MIN_W, w + 1); // +1 absorbs sub-pixel rounding
+    this.height = Math.max(MIN_H, h);
+    fo.setAttribute('width',  this.width);
+    fo.setAttribute('height', this.height);
+
     this.render();
   }
 

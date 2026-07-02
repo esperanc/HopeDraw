@@ -443,6 +443,7 @@ export class ProjectMenu {
       else if (e.key === 't' || e.key === 'T') this.app.setActiveTool('text');
       else if (e.key === 'p' || e.key === 'P') this.app.setActiveTool('parallelogram');
       else if (e.key === 'f' || e.key === 'F') this.app.setActiveTool('formula');
+      else if (e.key === 'b' || e.key === 'B') this.app.setActiveTool('freehand');
       // Tool's key handler
       this.app._activeTool?.onKeyDown?.(e);
     });

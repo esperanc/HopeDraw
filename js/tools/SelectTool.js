@@ -205,7 +205,7 @@ export class SelectTool {
     // Exiting arc edit mode if we dbl-click another shape type
     if (this.app.selection.isArcEditMode) this.app.selection.exitArcEditMode();
     if (hit.type === 'text') {
-      hit.enterEditMode();
+      hit.enterEditMode(() => this.app.selection.refresh());
       // exit on click outside
       const handler = (ev) => {
         if (!hit.el?.contains(ev.target)) {

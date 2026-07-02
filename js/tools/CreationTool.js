@@ -56,8 +56,8 @@ export class CreationTool {
 
     this.app.commands.execute(new AddShapeCommand(this.app, shape));
     this.app.selection.select(shape.id);
-    // Switch back to select tool
-    this.app.setActiveTool('select');
+    // Switch back to select (or stay, if this tool is sticky)
+    this.app.finishCreation();
   }
 
   _updatePreview(shape, x, y, w, h, wx2, wy2) {

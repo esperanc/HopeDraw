@@ -290,6 +290,19 @@ body {
   color: var(--accent);
 }
 
+/* Sticky tool: stays active after each shape (set via double-click). */
+.tool-btn.sticky::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--bg-panel, rgba(0,0,0,0.4));
+}
+
 .tool-separator {
   width: 28px;
   height: 1px;
