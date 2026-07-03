@@ -86,6 +86,9 @@ const app = {
       text: {
         textColor: '#000000',
       },
+      formula: {
+        textColor: '#000000',
+      },
       freehand: {
         stroke:      '#1a1a2e',
         strokeWidth: 3,
@@ -155,6 +158,29 @@ const app = {
     } else {
       this.setActiveTool('select');
     }
+  },
+
+  /**
+   * When a drawing tool is active (e.g. sticky mode) and the pointer lands on
+   * the current selection — either a resize/rotate handle or the body of a
+   * selected shape — switch to the select tool and forward the event, so the
+   * user can transform/move the just-created shape (matching the move cursor)
+   * instead of drawing a new one. Clicks elsewhere still draw. Returns true if
+   * the event was handed off.
+   */
+  grabSelection(wx, wy, e) {
+    if (this._activeToolName === 'select') return false;
+    let grab = !!this.selection.hitHandle(wx, wy, e);
+    if (!grab) {
+      // Only grab when the topmost shape under the pointer is itself selected,
+      // so drawing over/around other shapes keeps working.
+      const hit = this.tools.select._hitTestShapes(wx, wy);
+      grab = !!(hit && this.selection.hasSelectedFor(hit.id));
+    }
+    if (!grab) return false;
+    this.setActiveTool('select');            // keeps the current selection
+    this._activeTool.onPointerDown(wx, wy, e);
+    return true;
   },
 
   /** Open the LaTeX formula editor for a FormulaShape */

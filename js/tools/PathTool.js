@@ -43,6 +43,9 @@ export class PathTool {
 
   onPointerDown(wx, wy, e) {
     if (e.button !== 0) return;
+    // Sticky mode: when no path is in progress, clicking the selected shape
+    // (handle or body) grabs it for editing instead of starting a new path.
+    if (!this._shape && this.app.grabSelection(wx, wy, e)) return;
     wx = this.app.canvas.snap(wx);
     wy = this.app.canvas.snap(wy);
 

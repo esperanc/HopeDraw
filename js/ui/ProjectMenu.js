@@ -1,5 +1,5 @@
 import { Events } from '../core/Events.js';
-import { RemoveShapesCommand } from '../core/CommandManager.js';
+import { RemoveShapesCommand, TransformCommand } from '../core/CommandManager.js';
 import { GroupShape } from '../shapes/GroupShape.js';
 import { GroupCommand, UngroupCommand } from '../core/CommandManager.js';
 
@@ -167,12 +167,26 @@ export class ProjectMenu {
         { label: 'Toggle Grid',   action: 'view-grid',     shortcut: 'Ctrl+\'' },
         { label: 'Snap to Grid',  action: 'view-snap',     shortcut: 'Ctrl+Shift+;' },
       ];
-      case 'arrange': return [
-        { label: 'Bring to Front',  action: 'arr-front', disabled: !hasSel },
-        { label: 'Send to Back',    action: 'arr-back',  disabled: !hasSel },
-        { label: 'Bring Forward',   action: 'arr-fwd',   disabled: !hasSel },
-        { label: 'Send Backward',   action: 'arr-bwd',   disabled: !hasSel },
-      ];
+      case 'arrange': {
+        const canAlign = app.selection.count >= 2;
+        const canDist  = app.selection.count >= 3;
+        return [
+          { label: 'Bring to Front',  action: 'arr-front', disabled: !hasSel },
+          { label: 'Send to Back',    action: 'arr-back',  disabled: !hasSel },
+          { label: 'Bring Forward',   action: 'arr-fwd',   disabled: !hasSel },
+          { label: 'Send Backward',   action: 'arr-bwd',   disabled: !hasSel },
+          '---',
+          { label: 'Align Left',    action: 'align-left',    disabled: !canAlign },
+          { label: 'Align Center',  action: 'align-hcenter', disabled: !canAlign },
+          { label: 'Align Right',   action: 'align-right',   disabled: !canAlign },
+          { label: 'Align Top',     action: 'align-top',     disabled: !canAlign },
+          { label: 'Align Middle',  action: 'align-vcenter', disabled: !canAlign },
+          { label: 'Align Bottom',  action: 'align-bottom',  disabled: !canAlign },
+          '---',
+          { label: 'Distribute Horizontally', action: 'dist-h', disabled: !canDist },
+          { label: 'Distribute Vertically',   action: 'dist-v', disabled: !canDist },
+        ];
+      }
       default: return [];
     }
   }
@@ -213,6 +227,10 @@ export class ProjectMenu {
       case 'arr-back':  this._reorder('back');  break;
       case 'arr-fwd':   this._reorder('fwd');   break;
       case 'arr-bwd':   this._reorder('bwd');   break;
+      case 'align-left': case 'align-hcenter': case 'align-right':
+      case 'align-top':  case 'align-vcenter': case 'align-bottom':
+      case 'dist-h':     case 'dist-v':
+        this._alignDistribute(action); break;
     }
   }
 
@@ -370,6 +388,72 @@ export class ProjectMenu {
       const parent = s.el?.parentNode;
       if (parent) parent.insertBefore(s.el, parent.children[newIdx]);
     }
+  }
+
+  /**
+   * Align or distribute the selected shapes. Alignment snaps every shape's edge
+   * or centre to the selection's bounding extent; distribution equalises the
+   * gaps between shapes (keeping the two outermost fixed). Undoable as one step.
+   */
+  _alignDistribute(mode) {
+    const shapes = this.app.selection.selectedShapes();
+    const minCount = mode.startsWith('dist') ? 3 : 2;
+    if (shapes.length < minCount) return;
+
+    const boxes = shapes.map(s => ({ s, bb: s.getBBox() })).filter(o => o.bb);
+    if (boxes.length < minCount) return;
+
+    // Selection extent (union of all bounding boxes).
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    boxes.forEach(({ bb }) => {
+      minX = Math.min(minX, bb.x);        minY = Math.min(minY, bb.y);
+      maxX = Math.max(maxX, bb.x + bb.w);  maxY = Math.max(maxY, bb.y + bb.h);
+    });
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+
+    // Compute every delta from the ORIGINAL boxes before moving anything.
+    const deltas = new Map();
+    const set = (s, dx, dy) => deltas.set(s.id, { dx, dy });
+
+    switch (mode) {
+      case 'align-left':    boxes.forEach(({ s, bb }) => set(s, minX - bb.x, 0)); break;
+      case 'align-hcenter': boxes.forEach(({ s, bb }) => set(s, cx - (bb.x + bb.w / 2), 0)); break;
+      case 'align-right':   boxes.forEach(({ s, bb }) => set(s, maxX - (bb.x + bb.w), 0)); break;
+      case 'align-top':     boxes.forEach(({ s, bb }) => set(s, 0, minY - bb.y)); break;
+      case 'align-vcenter': boxes.forEach(({ s, bb }) => set(s, 0, cy - (bb.y + bb.h / 2))); break;
+      case 'align-bottom':  boxes.forEach(({ s, bb }) => set(s, 0, maxY - (bb.y + bb.h))); break;
+      case 'dist-h': {
+        const sorted = [...boxes].sort((a, b) => a.bb.x - b.bb.x);
+        const span = (sorted.at(-1).bb.x + sorted.at(-1).bb.w) - sorted[0].bb.x;
+        const sumW = sorted.reduce((t, { bb }) => t + bb.w, 0);
+        const gap = (span - sumW) / (sorted.length - 1);
+        let cursor = sorted[0].bb.x;
+        sorted.forEach(({ s, bb }) => { set(s, cursor - bb.x, 0); cursor += bb.w + gap; });
+        break;
+      }
+      case 'dist-v': {
+        const sorted = [...boxes].sort((a, b) => a.bb.y - b.bb.y);
+        const span = (sorted.at(-1).bb.y + sorted.at(-1).bb.h) - sorted[0].bb.y;
+        const sumH = sorted.reduce((t, { bb }) => t + bb.h, 0);
+        const gap = (span - sumH) / (sorted.length - 1);
+        let cursor = sorted[0].bb.y;
+        sorted.forEach(({ s, bb }) => { set(s, 0, cursor - bb.y); cursor += bb.h + gap; });
+        break;
+      }
+      default: return;
+    }
+
+    // Apply as one undoable step via snapshot-based TransformCommand.
+    const before = new Map(shapes.map(s => [s.id, s.snapshotState()]));
+    let moved = false;
+    shapes.forEach(s => {
+      const d = deltas.get(s.id);
+      if (d && (Math.abs(d.dx) > 1e-6 || Math.abs(d.dy) > 1e-6)) { s.translate(d.dx, d.dy); moved = true; }
+    });
+    if (!moved) return;
+    const after = new Map(shapes.map(s => [s.id, s.snapshotState()]));
+    this.app.commands.execute(new TransformCommand(this.app, shapes, { before, after }));
+    this.app.selection.refresh();
   }
 
   _showAlertModal(title, text) {

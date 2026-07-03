@@ -130,53 +130,103 @@ export class PathShape extends Shape {
       this._cachedBBox = { x: 0, y: 0, w: 1, h: 1 };
       return;
     }
-    
-    // If we have an existing cached bounding box, we unrotate to find the true local unrotated bounds of the modified geometry.
+
+    // Optionally unrotate into the local frame so node edits on a rotated shape
+    // recompute the true unrotated bounds (same behaviour as before).
+    let tf = (px, py) => [px, py];
     if (this._cachedBBox && this.rotation) {
       const cx = this._cachedBBox.x + this._cachedBBox.w / 2;
       const cy = this._cachedBBox.y + this._cachedBBox.h / 2;
       const r = -this.rotation * Math.PI / 180;
       const cos = Math.cos(r), sin = Math.sin(r);
-      const unrot = (px, py) => {
+      tf = (px, py) => {
         const dx = px - cx, dy = py - cy;
         return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
       };
-
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      this.nodes.forEach(n => {
-        const [ux, uy] = unrot(n.x, n.y);
-        minX = Math.min(minX, ux); maxX = Math.max(maxX, ux);
-        minY = Math.min(minY, uy); maxY = Math.max(maxY, uy);
-        if (n.cInX != null) {
-          const [cxIn, cyIn] = unrot(n.cInX, n.cInY);
-          minX = Math.min(minX, cxIn); maxX = Math.max(maxX, cxIn);
-          minY = Math.min(minY, cyIn); maxY = Math.max(maxY, cyIn);
-        }
-        if (n.cOutX != null) {
-          const [cxOut, cyOut] = unrot(n.cOutX, n.cOutY);
-          minX = Math.min(minX, cxOut); maxX = Math.max(maxX, cxOut);
-          minY = Math.min(minY, cyOut); maxY = Math.max(maxY, cyOut);
-        }
-      });
-      // Updating bounding box dynamically sets the new anchor origin for subsequent manipulations
-      this._cachedBBox = { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
-    } else {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      this.nodes.forEach(n => {
-        minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
-        minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
-        if (n.cInX != null) {
-          minX = Math.min(minX, n.cInX); maxX = Math.max(maxX, n.cInX);
-          minY = Math.min(minY, n.cInY); maxY = Math.max(maxY, n.cInY);
-        }
-        if (n.cOutX != null) {
-          minX = Math.min(minX, n.cOutX); maxX = Math.max(maxX, n.cOutX);
-          minY = Math.min(minY, n.cOutY); maxY = Math.max(maxY, n.cOutY);
-        }
-      });
-      this._cachedBBox = { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
     }
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const spanX = xs => { for (const x of xs) { if (x < minX) minX = x; if (x > maxX) maxX = x; } };
+    const spanY = ys => { for (const y of ys) { if (y < minY) minY = y; if (y > maxY) maxY = y; } };
+
+    const n = this.nodes;
+    // Anchors are always inside the curve; include them (covers single-node paths).
+    n.forEach(node => { const [x, y] = tf(node.x, node.y); spanX([x]); spanY([y]); });
+
+    // Walk each segment and add the *curve's* exact extrema — the tight bounds
+    // of the drawn Bézier/line, not the control-point hull.
+    const segCount = this.closed ? n.length : n.length - 1;
+    for (let i = 0; i < segCount; i++) {
+      const a = n[i], b = n[(i + 1) % n.length];
+      const [ax, ay] = tf(a.x, a.y);
+      const [bx, by] = tf(b.x, b.y);
+      const aOut = a.cOutX != null;
+      const bIn  = b.cInX  != null;
+
+      if (aOut && bIn) {
+        const [c1x, c1y] = tf(a.cOutX, a.cOutY);
+        const [c2x, c2y] = tf(b.cInX,  b.cInY);
+        spanX(this._cubicExtrema(ax, c1x, c2x, bx));
+        spanY(this._cubicExtrema(ay, c1y, c2y, by));
+      } else if (aOut) {
+        const [c1x, c1y] = tf(a.cOutX, a.cOutY);
+        spanX(this._quadExtrema(ax, c1x, bx));
+        spanY(this._quadExtrema(ay, c1y, by));
+      } else if (bIn) {
+        const [c1x, c1y] = tf(b.cInX, b.cInY);
+        spanX(this._quadExtrema(ax, c1x, bx));
+        spanY(this._quadExtrema(ay, c1y, by));
+      }
+      // else: straight line — endpoints already covered by the anchor pass.
+    }
+
+    this._cachedBBox = { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
     this._syncFromCache();
+  }
+
+  /**
+   * Values of a cubic Bézier component (one axis) at its endpoints and at any
+   * interior derivative root in (0,1) — i.e. the exact min/max candidates for
+   * that segment along that axis. No sampling.
+   */
+  _cubicExtrema(p0, p1, p2, p3) {
+    const vals = [p0, p3];
+    // B'(t)/3 = qa·t² + qb·t + qc
+    const qa = -p0 + 3 * p1 - 3 * p2 + p3;
+    const qb = 2 * (p0 - 2 * p1 + p2);
+    const qc = -p0 + p1;
+    const EPS = 1e-9;
+    const roots = [];
+    if (Math.abs(qa) < EPS) {
+      if (Math.abs(qb) > EPS) roots.push(-qc / qb);
+    } else {
+      const disc = qb * qb - 4 * qa * qc;
+      if (disc >= 0) {
+        const sq = Math.sqrt(disc);
+        roots.push((-qb + sq) / (2 * qa), (-qb - sq) / (2 * qa));
+      }
+    }
+    for (const t of roots) {
+      if (t > 0 && t < 1) {
+        const mt = 1 - t;
+        vals.push(mt*mt*mt*p0 + 3*mt*mt*t*p1 + 3*mt*t*t*p2 + t*t*t*p3);
+      }
+    }
+    return vals;
+  }
+
+  /** Same as _cubicExtrema for a quadratic Bézier component. */
+  _quadExtrema(p0, p1, p2) {
+    const vals = [p0, p2];
+    const denom = p0 - 2 * p1 + p2;
+    if (Math.abs(denom) > 1e-9) {
+      const t = (p0 - p1) / denom;
+      if (t > 0 && t < 1) {
+        const mt = 1 - t;
+        vals.push(mt*mt*p0 + 2*mt*t*p1 + t*t*p2);
+      }
+    }
+    return vals;
   }
 
   hitTest(wx, wy) {

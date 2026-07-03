@@ -95,6 +95,8 @@ export class FreehandTool {
 
   onPointerDown(wx, wy, e) {
     if (e.button !== 0) return;
+    // Sticky mode: clicking the selected shape (handle or body) grabs it for editing.
+    if (this.app.grabSelection(wx, wy, e)) return;
     const b = this._brush();
     // Freehand deliberately ignores grid snapping — snapping would shred the
     // stroke into staircases.

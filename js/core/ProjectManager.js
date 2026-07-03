@@ -332,11 +332,19 @@ export class ProjectManager {
     this.embedMathFonts = data.embedMathFonts ?? true;
     this.applyPageProperties();
 
-    if (data.defaultProps) {
-      this.app.defaultProps = data.defaultProps;
+    // Layer the saved tool defaults over the current factory defaults so that
+    // defaults introduced after a project was saved (new shape types, new
+    // properties) still take effect, while the project's own saved choices win.
+    const factory = this.app.factoryDefaultProps();
+    const saved = data.defaultProps;
+    if (saved) {
+      const merged = { ...factory };
+      for (const key of Object.keys(saved)) {
+        merged[key] = { ...(factory[key] || {}), ...saved[key] };
+      }
+      this.app.defaultProps = merged;
     } else {
-      // Reset to factory defaults if missing from save data
-      this.app.defaultProps = this.app.factoryDefaultProps();
+      this.app.defaultProps = factory;
     }
 
     this.app.layers.deserialize(data.layers ?? []);

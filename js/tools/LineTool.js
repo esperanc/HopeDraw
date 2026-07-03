@@ -17,6 +17,8 @@ export class LineTool {
 
   onPointerDown(wx, wy, e) {
     if (e.button !== 0) return;
+    // Sticky mode: clicking the selected shape (handle or body) grabs it for editing.
+    if (this.app.grabSelection(wx, wy, e)) return;
     wx = this.app.canvas.snap(wx);
     wy = this.app.canvas.snap(wy);
     this._down = true;
